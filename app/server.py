@@ -77,8 +77,12 @@ def audit(invoice_id: str):
     inv = conn.execute("SELECT * FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone()
     if not inv:
         raise HTTPException(404)
+    from .checks import mask_account
+    raw = json.loads(inv["raw"])
+    if raw.get("bank_account"):  # never send full account numbers to the browser
+        raw["bank_account"] = {**raw["bank_account"], "account_no": mask_account(raw["bank_account"].get("account_no"))}
     return {
-        "invoice": {**dict(inv), "raw": json.loads(inv["raw"]), "reasons": json.loads(inv["reasons"])},
+        "invoice": {**dict(inv), "raw": raw, "reasons": json.loads(inv["reasons"])},
         "sources": [dict(r) for r in conn.execute("SELECT * FROM sources WHERE invoice_id=?", (invoice_id,))],
         "payment": dict(p) if (p := conn.execute("SELECT * FROM payments WHERE invoice_id=?", (invoice_id,)).fetchone()) else None,
         "events": [dict(r) for r in conn.execute("SELECT kind, detail, at FROM events WHERE invoice_id=? ORDER BY event_id", (invoice_id,))],
@@ -89,15 +93,29 @@ def audit(invoice_id: str):
 def ledger():
     conn = connect()
     return [dict(r) for r in conn.execute(
-        "SELECT run_id, service, endpoint, COUNT(*) calls, SUM(credits) credits, SUM(cached) cached_hits "
-        "FROM ledger GROUP BY run_id, service, endpoint")]
+        "SELECT run_id, service, endpoint, COUNT(*) calls, SUM(credits) credits, SUM(inr) inr, SUM(cached) cached_hits, "
+        "MAX(at) last_at FROM ledger GROUP BY run_id, service, endpoint ORDER BY last_at DESC")]
+
+
+@app.get("/meta")
+def meta():
+    import os
+    from .payments import ProviderNotConfigured, get_provider
+    try:
+        get_provider(); provider = True
+    except ProviderNotConfigured:
+        provider = False
+    return {"demo": os.environ.get("PAYDESK_DEMO") == "1", "payment_provider": provider,
+            "model_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+            "crustdata_key": bool(os.environ.get("CRUSTDATA_API_KEY"))}
 
 
 @app.get("/state")
 def state():
     conn = connect()
-    rows = conn.execute("SELECT invoice_id, raw, state, outcome, reasons FROM invoices ORDER BY rowid DESC LIMIT 200").fetchall()
-    return [{"invoice_id": r["invoice_id"], "raw": json.loads(r["raw"]), "state": r["state"], "outcome": r["outcome"],
+    rows = conn.execute("SELECT invoice_id, raw, state, outcome, reasons, updated_at FROM invoices ORDER BY rowid DESC LIMIT 200").fetchall()
+    return [{"invoice_id": r["invoice_id"], "raw": {k: v for k, v in json.loads(r["raw"]).items() if k != "bank_account"},
+             "state": r["state"], "outcome": r["outcome"], "updated_at": r["updated_at"],
              "reasons": json.loads(r["reasons"])} for r in rows]
 
 

@@ -128,7 +128,7 @@ def step_vendor(conn, inv_id, inv, vendor_list):
                   f"Vendor {vendor.get('legal_name')} is '{status}' in Trust & Compliance, not cleared.", [sid])
             return
         _set(conn, inv_id, "VENDOR_OK", None,
-             {"code": "vendor_cleared", "text": f"Matched vendor {vendor.get('legal_name')} by {how}.",
+             {"code": "vendor_cleared", "text": f"Matched vendor {vendor.get('legal_name')} by {how.replace('_', ' ')}.",
               "source_ids": [sid]}, **cols)
 
 
@@ -151,11 +151,18 @@ def step_identity(conn, inv_id, inv, vendor, cd: Crustdata):
         return
     with tx(conn):
         url = "https://api.crustdata.com/company/identify"
-        if not matches:
+        # Only trust a match whose record actually lists this domain (fuzzy matches on
+        # generic hosts like *.business.site return unrelated companies).
+        exact = [m for m in matches
+                 if inv_domain in {vendor_mod.norm_domain(x) for x in
+                                   (m["company_data"]["basic_info"].get("all_domains") or [])
+                                   + [m["company_data"]["basic_info"].get("primary_domain") or ""]}]
+        if not exact:
             _hold(conn, inv_id, "domain_unknown",
-                  f"Crustdata has no company for invoice domain {inv_domain}.")
+                  f"Crustdata has no company that owns the invoice domain {inv_domain}; "
+                  f"cannot confirm the sender is the cleared vendor.")
             return
-        top = matches[0]["company_data"]["basic_info"]
+        top = exact[0]["company_data"]["basic_info"]
         sid = _source(conn, inv_id, f"{inv_domain} belongs to {top.get('name')}", url,
                       f"domains=[{inv_domain}] -> basic_info.crustdata_company_id",
                       top.get("crustdata_company_id"), None, fetched)

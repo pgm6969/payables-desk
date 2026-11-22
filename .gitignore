@@ -6,3 +6,5 @@ data/*.db
 data/*.db-*
 .pytest_cache/
 .DS_Store
+.claude/
+data/demo_vendors.json

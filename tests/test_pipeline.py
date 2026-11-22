@@ -33,7 +33,8 @@ class FakeCD:
         if d not in ids:
             return [], "2026-11-22T00:00:00+00:00"
         cid, name = ids[d]
-        return [{"company_data": {"basic_info": {"crustdata_company_id": cid, "name": name}}}], "2026-11-22T00:00:00+00:00"
+        return [{"company_data": {"basic_info": {"crustdata_company_id": cid, "name": name, "primary_domain": d,
+                                                 "all_domains": [d]}}}], "2026-11-22T00:00:00+00:00"
 
 
 class FakePay:

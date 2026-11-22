@@ -3,73 +3,343 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Payables Desk</title>
+<title>Cleared to Pay</title>
 <style>
-  /* Tokens after the Ramp style on styles.refero.design: monochrome + one highlighter for money actions */
-  :root { --ink:#0c0a08; --obsidian:#1a1919; --ash:#6d6c6b; --smoke:#d3d3d3; --hair:#e5e7eb; --bone:#f4f2f0; --paper:#fff; --hi:#e4f222; --warn:#b42318; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bone); color:var(--ink); font:400 15px/1.5 Inter, "IBM Plex Sans", system-ui, sans-serif; }
-  main { max-width:1200px; margin:0 auto; padding:32px 16px 64px; }
-  h1 { font-weight:400; font-size:40px; line-height:1.05; margin:0 0 4px; }
-  .sub { color:var(--ash); margin:0 0 32px; }
-  .label { font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--ash); }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:32px; }
-  .stat { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px; }
-  .stat b { display:block; font-weight:400; font-size:28px; }
-  .card { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px 24px; margin-bottom:12px; }
-  .row { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
-  .tag { display:inline-block; border:1px solid var(--hair); border-radius:6px; padding:2px 8px; font-size:12px; }
-  .tag.ready { background:var(--hi); border-color:var(--hi); }
-  .tag.held, .tag.cannot_verify { border-color:var(--warn); color:var(--warn); }
-  .tag.paid { background:var(--ink); color:var(--paper); border-color:var(--ink); }
-  ul { margin:8px 0 0; padding-left:18px; color:var(--ash); }
-  button { font:inherit; border-radius:6px; padding:8px 14px; border:1px solid var(--ink); background:var(--paper); cursor:pointer; }
-  button.pay { background:var(--hi); border-color:var(--hi); }
-  a { color:var(--ink); }
-  .amt { font-size:20px; }
+  /* Monochrome finance-desk tokens (after the Ramp style on styles.refero.design):
+     one highlighter colour, used only where money moves or a person must act. */
+  :root {
+    --ink:#0c0a08; --ink2:#1a1919; --ash:#6d6c6b; --smoke:#d3d3d3; --hair:#e5e7eb;
+    --bone:#f4f2f0; --paper:#ffffff; --hi:#e4f222; --hi-ink:#0c0a08;
+    --warn:#b42318; --warn-bg:#fef3f2; --ok:#166534; --ok-bg:#f0fdf4; --mute-bg:#f4f2f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink:#f4f2f0; --ink2:#e5e3e0; --ash:#a3a19e; --smoke:#3a3937; --hair:#2b2a29;
+      --bone:#0f0e0d; --paper:#181716; --warn:#f97066; --warn-bg:#2a1614; --ok:#4ade80; --ok-bg:#10231a; --mute-bg:#201f1d;
+    }
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--bone); color:var(--ink); }
+  body { font:400 15px/1.5 Inter, "IBM Plex Sans", system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1200px; margin:0 auto; padding:0 16px; }
+  .label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ash); }
+  button { font:inherit; color:inherit; cursor:pointer; }
+  a { color:inherit; }
+
+  /* top bar */
+  header.top { border-bottom:1px solid var(--hair); background:var(--paper); position:sticky; top:0; z-index:5; }
+  header.top .wrap { display:flex; align-items:center; gap:16px; height:56px; }
+  .brand { font-size:16px; display:flex; align-items:center; gap:10px; }
+  .mark { width:22px; height:22px; border-radius:6px; background:var(--hi); display:grid; place-items:center; color:var(--hi-ink); font-size:13px; }
+  nav.tabs { display:flex; gap:4px; margin-left:16px; }
+  nav.tabs button { background:none; border:0; padding:8px 12px; border-radius:6px; color:var(--ash); }
+  nav.tabs button[aria-selected="true"] { color:var(--ink); background:var(--mute-bg); }
+  .chips { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { font-size:12px; border:1px solid var(--hair); border-radius:6px; padding:2px 8px; color:var(--ash); white-space:nowrap; }
+  .chip.on::before { content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--ok); margin-right:6px; vertical-align:1px; }
+  .chip.off::before { content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--smoke); margin-right:6px; vertical-align:1px; }
+
+  .banner { background:var(--mute-bg); color:var(--ink); border-bottom:1px solid var(--hair); font-size:13px; }
+  .banner .wrap { padding:8px 16px; }
+
+  /* hero */
+  .hero { padding:40px 0 24px; display:grid; grid-template-columns:1.4fr 1fr; gap:32px; align-items:end; }
+  .hero h1 { font-weight:400; font-size:48px; line-height:1.02; letter-spacing:-.01em; margin:8px 0 12px; }
+  .hero p { color:var(--ash); margin:0; max-width:56ch; }
+  .promise { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px; }
+  .promise ol { margin:8px 0 0; padding-left:18px; }
+  .promise li { margin:4px 0; }
+
+  /* stat strip */
+  .stats { display:grid; grid-template-columns:repeat(6, 1fr); border:1px solid var(--hair); border-radius:16px; background:var(--paper); overflow:hidden; }
+  .stat { padding:18px 20px; border-right:1px solid var(--hair); }
+  .stat:last-child { border-right:0; }
+  .stat b { display:block; font-weight:400; font-size:30px; line-height:1.1; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .stat .label { display:block; }
+  .stat.act b { background:linear-gradient(transparent 55%, var(--hi) 55%); display:inline-block; color:#0c0a08; padding:0 2px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stat.act b { color:var(--ink); background:none; border-bottom:4px solid var(--hi); } }
+
+  /* pipeline */
+  .flow { margin:24px 0 8px; display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
+  .step { background:var(--paper); border:1px solid var(--hair); border-radius:12px; padding:14px 16px; position:relative; }
+  .step .n { font-size:11px; color:var(--ash); }
+  .step .t { margin-top:2px; }
+  .step .c { font-size:24px; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .step .d { font-size:12px; color:var(--ash); margin-top:2px; }
+  .step.person { border-color:var(--ink); }
+
+  section.panel { margin:32px 0 64px; }
+  .panel-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+  .panel-head h2 { font-weight:400; font-size:24px; margin:0; }
+  .muted { color:var(--ash); }
+
+  /* worklist */
+  .item { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:18px 20px; margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:16px; }
+  .item .who { font-size:18px; }
+  .item .meta { font-size:13px; color:var(--ash); margin-top:2px; }
+  .reasons { list-style:none; margin:12px 0 0; padding:0; display:grid; gap:6px; }
+  .reasons li { display:grid; grid-template-columns:auto 1fr; gap:10px; align-items:start; font-size:14px; }
+  .code { font-size:12px; border-radius:6px; padding:1px 8px; border:1px solid var(--hair); white-space:nowrap; }
+  .code.bad { border-color:var(--warn); color:var(--warn); background:var(--warn-bg); }
+  .code.good { border-color:transparent; color:var(--ok); background:var(--ok-bg); }
+  .code.info { color:var(--ash); }
+  .status { font-size:12px; border-radius:6px; padding:2px 8px; border:1px solid var(--hair); }
+  .status.ready { background:var(--hi); border-color:var(--hi); color:var(--hi-ink); }
+  .status.held { border-color:var(--warn); color:var(--warn); }
+  .status.cannot_verify { background:var(--mute-bg); }
+  .status.paid { background:var(--ink); color:var(--bone); border-color:var(--ink); }
+  .actions { display:flex; flex-direction:column; gap:8px; align-items:stretch; min-width:180px; }
+  .btn { border-radius:6px; padding:9px 14px; border:1px solid var(--ink); background:var(--paper); }
+  .btn.pay { background:var(--hi); border-color:var(--hi); color:var(--hi-ink); }
+  .btn.ghost { border-color:var(--hair); color:var(--ash); }
+  .note { font-size:12px; color:var(--ash); }
+  .empty { background:var(--paper); border:1px dashed var(--smoke); border-radius:16px; padding:28px; color:var(--ash); }
+
+  table { width:100%; border-collapse:collapse; background:var(--paper); border:1px solid var(--hair); border-radius:16px; overflow:hidden; font-size:14px; }
+  th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--hair); vertical-align:top; }
+  th { font-weight:400; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr:last-child td { border-bottom:0; }
+
+  /* audit drawer */
+  .drawer { position:fixed; inset:0 0 0 auto; width:min(560px, 100%); background:var(--paper); border-left:1px solid var(--hair); transform:translateX(100%); transition:transform .2s ease; z-index:10; overflow:auto; }
+  .drawer.open { transform:none; }
+  .drawer .in { padding:24px; }
+  .src { border:1px solid var(--hair); border-radius:12px; padding:12px 14px; margin-bottom:8px; font-size:13px; }
+  .src q { display:block; margin:6px 0; padding-left:10px; border-left:3px solid var(--hi); quotes:none; color:var(--ink); }
+  .timeline { list-style:none; padding:0; margin:0; font-size:13px; }
+  .timeline li { padding:6px 0; border-bottom:1px solid var(--hair); display:grid; grid-template-columns:72px 1fr; gap:8px; }
+  .scrim { position:fixed; inset:0; background:rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:opacity .2s; z-index:9; }
+  .scrim.open { opacity:1; pointer-events:auto; }
+
+  .how { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .card { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px; }
+  .card h3 { font-weight:400; font-size:18px; margin:6px 0 8px; }
+  .card p { margin:0; color:var(--ash); font-size:14px; }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns:1fr; } .hero h1 { font-size:36px; }
+    .stats { grid-template-columns:repeat(2,1fr); } .stat { border-bottom:1px solid var(--hair); }
+    .flow { grid-template-columns:repeat(2,1fr); } .how { grid-template-columns:1fr; }
+    .item { grid-template-columns:1fr; } .actions { flex-direction:row; flex-wrap:wrap; }
+    nav.tabs { margin-left:0; overflow-x:auto; } .chips { display:none; }
+    table { display:block; overflow-x:auto; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <p class="label">Cleared to Pay · Buying and paying</p>
-  <h1>Payables desk</h1>
-  <p class="sub">Each invoice paid once, only to a cleared vendor's verified account. Anything unproven waits for a person.</p>
-  <div class="grid" id="stats"></div>
-  <p class="label">Invoices</p>
-  <div id="list"></div>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><span class="mark">₹</span>Cleared to Pay</div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="work" aria-selected="true">Worklist</button>
+      <button role="tab" data-tab="all" aria-selected="false">All invoices</button>
+      <button role="tab" data-tab="ledger" aria-selected="false">Cost ledger</button>
+      <button role="tab" data-tab="how" aria-selected="false">How it decides</button>
+    </nav>
+    <div class="chips" id="chips"></div>
+  </div>
+</header>
+<div class="banner" id="banner" hidden><div class="wrap" id="bannerText"></div></div>
+
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <span class="label">Payables desk · Buying and paying × Trust and compliance</span>
+      <h1>Every invoice paid once,<br>only to a verified account.</h1>
+      <p>The desk reads the accounts inbox, matches each invoice to its purchase order, checks the vendor and its bank account against live records, and pays only after a person approves. Anything it cannot prove waits here, with the reason and the source.</p>
+    </div>
+    <div class="promise">
+      <span class="label">Nothing moves until you say yes</span>
+      <ol>
+        <li>No payment to a vendor that Trust &amp; Compliance has not cleared.</li>
+        <li>No payment to an account that was changed by email.</li>
+        <li>No invoice paid twice, even after a crash.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="flow" id="flow"></div>
+
+  <section class="panel" id="tab-work">
+    <div class="panel-head"><h2>Waiting for a person</h2><span class="muted" id="workCount"></span></div>
+    <div id="worklist"></div>
+  </section>
+
+  <section class="panel" id="tab-all" hidden>
+    <div class="panel-head"><h2>All invoices</h2><span class="muted">Newest first. Open any row for its audit trail.</span></div>
+    <div id="alltable"></div>
+  </section>
+
+  <section class="panel" id="tab-ledger" hidden>
+    <div class="panel-head"><h2>Cost ledger</h2><span class="muted" id="ledgerTotal"></span></div>
+    <div id="ledgertable"></div>
+  </section>
+
+  <section class="panel" id="tab-how" hidden>
+    <div class="panel-head"><h2>How it decides</h2><span class="muted">The model only reads. Fixed rules decide. A person approves.</span></div>
+    <div class="how">
+      <div class="card"><span class="label">01 · Read</span><h3>Transcribe the inbox</h3><p>Each email or PDF becomes invoice fields, each with the exact quote that states it. Requests to change bank details are flagged, never applied.</p></div>
+      <div class="card"><span class="label">02 · Verify</span><h3>Vendor and identity</h3><p>The payee must be a vendor Trust &amp; Compliance cleared, and the invoice domain must belong, in Crustdata's records, to that same company.</p></div>
+      <div class="card"><span class="label">03 · Check</span><h3>Bank, duplicate, PO</h3><p>Same verified account; not an invoice already seen in another format; amount within 1% of the purchase order.</p></div>
+      <div class="card"><span class="label">04 · Approve</span><h3>A person decides</h3><p>Clean invoices and held ones both wait here. A person can approve or reject; nobody can edit a result.</p></div>
+      <div class="card"><span class="label">05 · Pay once</span><h3>Idempotent payout</h3><p>The payment key is saved before the provider is called. Kill the process anywhere: on restart the same key is reused, so the vendor is paid once.</p></div>
+      <div class="card"><span class="label">06 · Show the work</span><h3>Replayable audit trail</h3><p>Every fact links to its record with field and date, every step is an event, every call has a cost line.</p></div>
+    </div>
+  </section>
 </main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Audit trail"><div class="in" id="drawerIn"></div></aside>
+
 <script>
-const who = () => { try { return localStorage.getItem('approver') || prompt('Your name (recorded with the decision)') } catch { return prompt('Your name') } };
+const LABEL = {
+  bank_change_requested: ['Bank change by email', 'bad'], bank_details_changed: ['Different bank account', 'bad'],
+  possible_duplicate: ['Possible duplicate', 'bad'], lookalike_payee: ['Lookalike payee', 'bad'],
+  domain_unknown: ['Sender not confirmed', 'bad'], vendor_not_cleared: ['Vendor not cleared', 'bad'],
+  po_mismatch: ['PO mismatch', 'bad'], no_vendor_record: ['Unknown payee', 'bad'], no_verified_account: ['No verified account', 'bad'],
+  not_payable: ['Not payable', 'bad'], bad_amount: ['Unreadable amount', 'bad'], source_unavailable: ['Source down', 'bad'],
+  cost_limit: ['Cost limit', 'bad'], time_limit: ['Time limit', 'bad'],
+  vendor_cleared: ['Vendor cleared', 'good'], identity_confirmed: ['Identity confirmed', 'good'], identity_by_gstin: ['GSTIN match', 'good'],
+  checks_passed: ['Checks passed', 'good'], approved_by_person: ['Approved', 'good'], paid: ['Paid', 'good'],
+  rejected_by_person: ['Rejected', 'info'],
+};
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = a => { const n = Number(String(a ?? '').replace(/[^\d.]/g, '')); return isFinite(n) && n ? '₹' + n.toLocaleString('en-IN', {maximumFractionDigits: 2}) : esc(a); };
+const store = { get(k){ try { return localStorage.getItem(k) } catch { return null } }, set(k,v){ try { localStorage.setItem(k,v) } catch {} } };
+let ROWS = [], META = {};
+
+function statusOf(r) {
+  if (r.state === 'PAID') return ['paid', 'Paid'];
+  if (r.state === 'CANNOT_VERIFY') return ['cannot_verify', 'Cannot verify'];
+  if (r.state === 'REJECTED') return ['cannot_verify', 'Rejected'];
+  if (r.state === 'APPROVED' || r.state === 'PAYING') return ['ready', META.payment_provider ? 'Paying' : 'Approved · payments not connected'];
+  if (r.state === 'AWAITING_APPROVAL') return r.outcome === 'ready' ? ['ready', 'Ready to pay'] : ['held', 'Held'];
+  return ['', 'Checking'];
+}
+function reasonList(r, onlyLast) {
+  const list = onlyLast ? r.reasons.filter(x => (LABEL[x.code]||[])[1] === 'bad').concat(r.reasons.slice(-1)) : r.reasons;
+  const seen = new Set();
+  return '<ul class="reasons">' + list.filter(x => { const k = x.code + x.text; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map(x => { const [l, k] = LABEL[x.code] || [x.code, 'info']; return `<li><span class="code ${k}">${esc(l)}</span><span>${esc(x.text)}${x.missing ? ` <span class="muted">Missing: ${esc(x.missing)}.</span>` : ''}</span></li>`; }).join('') + '</ul>';
+}
+
 async function decide(id, d) {
-  const by = who(); if (!by) return;
-  try { localStorage.setItem('approver', by) } catch {}
-  const r = await fetch(`/invoices/${encodeURIComponent(id)}/${d}`, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({by})});
+  let by = store.get('approver');
+  if (!by) { by = prompt('Your name. It is recorded with the decision.'); if (!by) return; store.set('approver', by); }
+  const r = await fetch(`/invoices/${encodeURIComponent(id)}/${d}`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({by})});
   if (!r.ok) alert(await r.text());
-  setTimeout(load, 600);
+  setTimeout(load, 500);
 }
-function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-async function load() {
-  const [rows, ledger] = await Promise.all([fetch('/state').then(r=>r.json()), fetch('/ledger').then(r=>r.json())]);
-  const count = k => rows.filter(r => (r.outcome||'') === k).length;
-  const credits = ledger.reduce((s,l)=>s+(l.credits||0),0);
-  document.getElementById('stats').innerHTML = [
-    ['Paid', count('paid')], ['Waiting for a person', rows.filter(r=>r.state==='AWAITING_APPROVAL').length],
-    ['Cannot verify', count('cannot_verify')], ['Crustdata credits', credits.toFixed(2)]
-  ].map(([k,v]) => `<div class="stat"><span class="label">${k}</span><b>${v}</b></div>`).join('');
-  document.getElementById('list').innerHTML = rows.map(r => {
-    const waiting = r.state === 'AWAITING_APPROVAL';
-    const o = r.outcome || r.state.toLowerCase();
-    return `<div class="card"><div class="row">
-      <div><span class="tag ${esc(o)}">${esc(o.replace('_',' '))}</span>
-        <div class="amt">${esc(r.raw.vendor_name)} · ₹${esc(r.raw.amount)}</div>
-        <span class="label">${esc(r.raw.invoice_no)} · ${esc(r.raw.invoice_date)} · <a href="/invoices/${encodeURIComponent(r.invoice_id)}/audit" target="_blank">audit trail</a></span>
-        <ul>${r.reasons.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul></div>
-      ${waiting ? `<div><button class="pay" onclick="decide('${esc(r.invoice_id)}','approve')">Approve payment</button>
-                     <button onclick="decide('${esc(r.invoice_id)}','reject')">Reject</button></div>` : ''}
+
+function renderStats() {
+  const n = f => ROWS.filter(f).length;
+  const codes = c => ROWS.filter(r => r.reasons.some(x => x.code === c)).length;
+  const waiting = n(r => r.state === 'AWAITING_APPROVAL');
+  const stats = [
+    ['Waiting for you', waiting, true], ['Paid once', n(r => r.state === 'PAID')],
+    ['Duplicates stopped', codes('possible_duplicate')],
+    ['Bank changes blocked', codes('bank_change_requested') + codes('bank_details_changed')],
+    ['Cannot verify', n(r => r.state === 'CANNOT_VERIFY')], ['Invoices read', ROWS.length],
+  ];
+  document.getElementById('stats').innerHTML = stats.map(([k, v, act]) => `<div class="stat ${act ? 'act' : ''}"><span class="label">${k}</span><b>${v}</b></div>`).join('');
+  const passed = s => ROWS.filter(r => r.reasons.some(x => s.includes(x.code))).length;
+  const flow = [
+    ['01', 'Read', ROWS.length, 'invoices from the inbox'],
+    ['02', 'Vendor cleared', passed(['vendor_cleared']), 'by Trust & Compliance'],
+    ['03', 'Identity', passed(['identity_confirmed', 'identity_by_gstin']), 'live Crustdata check'],
+    ['04', 'Checks', passed(['checks_passed']), 'bank · duplicate · PO clean'],
+    ['05', 'Person', waiting, 'waiting for approval', true],
+    ['06', 'Paid once', n(r => r.state === 'PAID'), META.payment_provider ? 'test-mode payouts' : 'payments not connected'],
+  ];
+  document.getElementById('flow').innerHTML = flow.map(([i, t, c, d, p]) => `<div class="step ${p ? 'person' : ''}"><div class="n">${i}</div><div class="t">${t}</div><div class="c">${c}</div><div class="d">${esc(d)}</div></div>`).join('');
+}
+
+function renderWork() {
+  const items = ROWS.filter(r => r.state === 'AWAITING_APPROVAL').sort((a, b) => (a.outcome === 'ready') - (b.outcome === 'ready'));
+  document.getElementById('workCount').textContent = items.length ? `${items.length} invoice${items.length > 1 ? 's' : ''}. Held items first.` : '';
+  document.getElementById('worklist').innerHTML = items.map(r => {
+    const [cls, txt] = statusOf(r);
+    return `<div class="item"><div>
+      <span class="status ${cls}">${esc(txt)}</span>
+      <div class="who">${esc(r.raw.vendor_name || 'Unknown payee')} · ${money(r.raw.amount)}</div>
+      <div class="meta">${esc(r.raw.invoice_no)} · ${esc(r.raw.invoice_date)} · PO ${esc(r.raw.po_number || 'none')}${r.raw._message ? ' · from ' + esc(r.raw._message) : ''}</div>
+      ${reasonList(r, true)}
+    </div><div class="actions">
+      <button class="btn ${r.outcome === 'ready' ? 'pay' : ''}" data-act="approve" data-id="${esc(r.invoice_id)}">${r.outcome === 'ready' ? 'Approve payment' : 'Approve anyway'}</button>
+      <button class="btn" data-act="reject" data-id="${esc(r.invoice_id)}">Reject</button>
+      <button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit trail</button>
+      ${r.outcome === 'ready' ? '' : '<span class="note">Even if approved, the desk will not pay an uncleared vendor or an unverified account.</span>'}
     </div></div>`;
-  }).join('') || '<div class="card">No invoices yet. POST a batch to /runs.</div>';
+  }).join('') || '<div class="empty">Nothing is waiting for you. New invoices appear here after the checks run.</div>';
 }
-load(); setInterval(load, 3000);
+
+function renderAll() {
+  document.getElementById('alltable').innerHTML = ROWS.length ? `<table><thead><tr><th>Status</th><th>Payee</th><th>Invoice</th><th class="num">Amount</th><th>Latest reason</th><th></th></tr></thead><tbody>` +
+    ROWS.map(r => { const [cls, txt] = statusOf(r); const last = r.reasons[r.reasons.length - 1] || {};
+      return `<tr><td><span class="status ${cls}">${esc(txt)}</span></td><td>${esc(r.raw.vendor_name)}</td><td>${esc(r.raw.invoice_no)}<div class="note">${esc(r.raw.invoice_date)}</div></td><td class="num">${money(r.raw.amount)}</td><td>${esc(last.text || '')}</td><td><button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit</button></td></tr>`; }).join('') +
+    '</tbody></table>' : '<div class="empty">No invoices yet. Run <code>python -m app.cli inbox &lt;folder&gt;</code> or POST a batch to <code>/runs</code>.</div>';
+}
+
+async function renderLedger() {
+  const rows = await fetch('/ledger').then(r => r.json());
+  const credits = rows.reduce((s, r) => s + (r.credits || 0), 0), inr = rows.reduce((s, r) => s + (r.inr || 0), 0);
+  document.getElementById('ledgerTotal').textContent = `${credits.toFixed(2)} Crustdata credits · ₹${inr.toFixed(2)} model cost`;
+  document.getElementById('ledgertable').innerHTML = rows.length ? `<table><thead><tr><th>Service</th><th>Call</th><th class="num">Calls</th><th class="num">From cache</th><th class="num">Credits</th><th class="num">₹</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td>${esc(r.service)}</td><td>${esc(r.endpoint)}</td><td class="num">${r.calls}</td><td class="num">${r.cached_hits || 0}</td><td class="num">${(r.credits || 0).toFixed(2)}</td><td class="num">${(r.inr || 0).toFixed(2)}</td></tr>`).join('') +
+    '</tbody></table>' : '<div class="empty">No calls yet.</div>';
+}
+
+async function openAudit(id) {
+  const a = await fetch(`/invoices/${encodeURIComponent(id)}/audit`).then(r => r.json());
+  const [cls, txt] = statusOf({...a.invoice, raw: a.invoice.raw});
+  const t = s => new Date(s * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+  document.getElementById('drawerIn').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="label">Audit trail</span><button class="btn ghost" id="closeDrawer">Close</button></div>
+    <h2 style="font-weight:400;margin:12px 0 4px">${esc(a.invoice.raw.vendor_name)} · ${money(a.invoice.raw.amount)}</h2>
+    <div class="meta muted">${esc(a.invoice.raw.invoice_no)} · ${esc(a.invoice_id || id)}</div>
+    <p><span class="status ${cls}">${esc(txt)}</span></p>
+    ${reasonList(a.invoice, false)}
+    ${a.payment ? `<p class="label" style="margin-top:24px">Payment</p><div class="src">Idempotency key <code>${esc(a.payment.idempotency_key)}</code><br>${esc(a.payment.provider)} · ${esc(a.payment.status)} · ${money(a.payment.amount_paise / 100)} to ${esc(a.payment.account_masked)}${a.payment.provider_ref ? ' · ref ' + esc(a.payment.provider_ref) : ''}</div>` : ''}
+    <p class="label" style="margin-top:24px">Sources (${a.sources.length})</p>
+    ${a.sources.map(s => `<div class="src"><div>${esc(s.fact)}</div><q>${esc(s.value)}</q><div class="note">${esc(s.url)} · field ${esc(s.field)}${s.record_date ? ' · record ' + esc(s.record_date) : ''} · retrieved ${esc(s.retrieved_at)}</div></div>`).join('') || '<div class="note">No sources recorded yet.</div>'}
+    <p class="label" style="margin-top:24px">Events</p>
+    <ul class="timeline">${a.events.map(e => { const d = JSON.parse(e.detail); return `<li><span class="muted">${t(e.at)}</span><span>${esc(e.kind)}${d.to ? ' → ' + esc(d.to) : ''}${d.by ? ' by ' + esc(d.by) : ''}${d.reason && d.reason.text ? ' · ' + esc(d.reason.text) : ''}</span></li>`; }).join('')}</ul>`;
+  document.getElementById('drawer').classList.add('open'); document.getElementById('scrim').classList.add('open');
+  document.getElementById('closeDrawer').onclick = closeAudit;
+}
+function closeAudit() { document.getElementById('drawer').classList.remove('open'); document.getElementById('scrim').classList.remove('open'); }
+document.getElementById('scrim').onclick = closeAudit;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAudit(); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'audit') openAudit(b.dataset.id); else decide(b.dataset.id, b.dataset.act);
+});
+
+function showTab(name) {
+  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  ['work', 'all', 'ledger', 'how'].forEach(t => document.getElementById('tab-' + t).hidden = t !== name);
+  store.set('tab', name);
+  if (name === 'ledger') renderLedger();
+}
+document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+async function load() {
+  try {
+    [ROWS, META] = await Promise.all([fetch('/state').then(r => r.json()), fetch('/meta').then(r => r.json())]);
+  } catch { return; }
+  document.getElementById('chips').innerHTML = [
+    ['Crustdata live', META.crustdata_key], ['Inbox reader', META.model_key], ['Payouts · test mode', META.payment_provider],
+  ].map(([k, on]) => `<span class="chip ${on ? 'on' : 'off'}">${k}${on ? '' : ' · off'}</span>`).join('');
+  const banner = document.getElementById('banner');
+  banner.hidden = !META.demo;
+  if (META.demo) document.getElementById('bannerText').textContent = 'Sample vendors and invoices (test data) for a local preview. Crustdata lookups are live. Payouts are off until Razorpay test keys are set.';
+  renderStats(); renderWork(); renderAll();
+  if (!document.getElementById('tab-ledger').hidden) renderLedger();
+}
+showTab(store.get('tab') || 'work');
+load(); setInterval(load, 4000);
 </script>
 </body>
 </html>
