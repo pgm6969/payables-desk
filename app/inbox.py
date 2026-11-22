@@ -131,9 +131,74 @@ def _cache_key(msg: dict) -> str:
     return "inbox:" + h.hexdigest()
 
 
+_RX = {
+    "invoice_no": r"invoice\s*(?:no\.?|number|#)\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-_.]{1,30})",
+    "amount": r"(?:grand\s+total|total\s+(?:amount\s+)?(?:payable|due)|amount\s+(?:due|payable)|net\s+payable|invoice\s+value|total)\s*[:\-]?\s*((?:₹|rs\.?|inr)?\s*[\d,]+(?:\.\d{1,2})?)",
+    "invoice_date": r"(?:invoice\s+)?date\s*[:\-]?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[/\- ](?:\d{1,2}|[A-Za-z]{3,9})[/\- ]\d{2,4})",
+    "vendor_gstin": r"\b(\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z])\b",
+    "po_number": r"(?:p\.?\s?o\.?|purchase\s+order)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-]{2,30})",
+    "bank_ifsc": r"\b([A-Z]{4}0[A-Z0-9]{6})\b",
+    "bank_account_no": r"(?:a/?c|account)\s*(?:no\.?|number)?\s*[:\-]?\s*(\d{6,18})",
+}
+_BANK_CHANGE = re.compile(r"(chang(e|ed|ing)|new|update[d]?|switch(ed)?)\s+(of\s+|our\s+|to\s+)?(the\s+)?bank|bank\s+(account\s+)?details\s+(have\s+)?changed|new\s+account\s+details", re.I)
+
+
+def rule_extract(msg: dict) -> dict:
+    """No-model reader for plain-text / .eml messages: fixed patterns, and the exact line each value
+    came from as its evidence. Fields it cannot find stay empty (never guessed). PDFs need the model."""
+    text = f"{msg.get('subject', '')}\n{msg.get('body', '')}"
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    inv, ev = {k: "" for k in ("invoice_no", "vendor_name", "vendor_gstin", "vendor_domain", "amount", "currency",
+                               "invoice_date", "po_number", "bank_ifsc", "bank_account_no")}, []
+    for field, rx in _RX.items():
+        for l in lines:
+            m = re.search(rx, l, re.I if field not in ("vendor_gstin", "bank_ifsc") else 0)
+            if m:
+                inv[field] = m.group(1).strip().rstrip(".")
+                ev.append({"field": field, "quote": l[:200]})
+                break
+    for l in lines:
+        m = re.match(r"^(?:from|vendor|supplier|billed\s+by|seller)\s*[:\-]\s*(.+)$", l, re.I)
+        name = re.sub(r"<.*?>", "", m.group(1)).strip().strip('"') if m else ""
+        if name and "@" not in name:
+            inv["vendor_name"] = name
+            ev.append({"field": "vendor_name", "quote": l[:200]})
+            break
+    if not inv["vendor_name"] and msg.get("from"):
+        inv["vendor_name"] = re.sub(r"\s*<.*?>\s*", "", msg["from"]).strip().strip('"')
+    if inv["amount"]:
+        inv["currency"] = "INR"
+    d = checks_norm_date(inv["invoice_date"])
+    if d:
+        inv["invoice_date"] = d
+    inv["evidence"] = ev
+    asks_change = bool(_BANK_CHANGE.search(text))
+    blank_bc = {"vendor_name": "", "vendor_gstin": "", "vendor_domain": "", "new_ifsc": "", "new_account_no": "", "quote": ""}
+    if asks_change:
+        q = next((l for l in lines if _BANK_CHANGE.search(l)), "")
+        bc = {**blank_bc, "vendor_name": inv["vendor_name"], "vendor_gstin": inv["vendor_gstin"],
+              "new_ifsc": inv["bank_ifsc"], "new_account_no": inv["bank_account_no"], "quote": q[:200]}
+        return {"kind": "bank_change_request", "invoices": [inv] if inv["invoice_no"] and inv["amount"] else [], "bank_change": bc}
+    if inv["invoice_no"] or inv["amount"]:
+        return {"kind": "invoice", "invoices": [inv], "bank_change": blank_bc}
+    return {"kind": "other", "invoices": [], "bank_change": blank_bc}
+
+
+def checks_norm_date(s):
+    from .checks import norm_date
+    return norm_date(s)
+
+
 def extract(msg: dict, conn, run_id=None, client=None) -> dict:
     """One message -> structured transcription. Cached by content, so a restart
-    or a resubmission reads the same answer for free."""
+    or a resubmission reads the same answer for free. Without ANTHROPIC_API_KEY,
+    text messages are read by fixed patterns (rule_extract); PDFs then cannot be read."""
+    if client is None and not os.environ.get("ANTHROPIC_API_KEY"):
+        if msg["pdfs"] and not msg["body"].strip():
+            raise ExtractionRefused(f"{msg['id']} is a PDF; reading PDFs needs the model reader (set ANTHROPIC_API_KEY)")
+        conn.execute("INSERT INTO ledger(run_id, service, endpoint, cached, status, at) VALUES (?,?,?,?,?,?)",
+                     (run_id, "rules", "inbox.rule_extract", 0, "ok", time.time()))
+        return rule_extract(msg)
     key = _cache_key(msg)
     row = conn.execute("SELECT response FROM http_cache WHERE cache_key=?", (key,)).fetchone()
     if row:

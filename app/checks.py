@@ -8,7 +8,8 @@ PO_TOLERANCE = 0.01  # 1%
 def to_paise(amount) -> int:
     if isinstance(amount, (int, float)):
         return int(round(float(amount) * 100))
-    s = re.sub(r"[^\d.]", "", str(amount))  # strips ₹, commas, "INR"
+    s = re.sub(r"(?i)(rs|inr)\.?", "", str(amount))  # "Rs. 18,500.00": the dot after Rs is not a decimal point
+    s = re.sub(r"[^\d.]", "", s).strip(".")  # strips ₹, commas, spaces
     if not s:
         raise ValueError(f"cannot read amount {amount!r}")
     return int(round(float(s) * 100))

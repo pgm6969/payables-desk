@@ -13,6 +13,40 @@ Today, one firm clears vendors and another pays them. Fraud slips through betwee
 - No invoice is paid unless the vendor was **cleared** by the Trust and compliance service.
 - No invoice is paid to an account that service did not **verify**.
 
+## What else it does
+- **Bank-statement posting** (`app/bank.py`, the **Bank lines** page, `python -m app.cli bank lines.json`). Each bank line gets a payee and an account:
+  1. The payee comes from the client's vendor master (legal name or a recorded bank descriptor).
+  2. Otherwise from Crustdata, but only when one large company clearly owns the name.
+  3. Otherwise the line is **cannot verify**.
+
+  Duplicates are held, and the account comes from the client's chart of accounts. On live data it reproduces the problem statement's example:
+  - `RAZ*SWIGGY BLR` → Swiggy, Staff meals
+  - `AWS EMEA` → Amazon Web Services EMEA SARL, Cloud hosting
+  - the second identical AWS line → held as a possible duplicate
+  - `PAYTM*SHARMA TRD` → cannot verify (several businesses share the name)
+- **Sign-in:**
+  - **Google** (Google Identity Services): set `GOOGLE_CLIENT_ID`, and optionally `GOOGLE_ALLOWED_DOMAIN`. The ID token is verified with Google before a session starts.
+  - Without it, there's a local demo sign-up. It's labelled "local account" on every approval it records.
+  - Every approval is recorded with the signed-in identity, never a typed name. Sessions are HMAC-signed cookies, and no passwords are stored.
+- **Two-person approval:** at or above ₹1,00,000 (`two_person_threshold_inr`), a second, **different** person must approve.
+- **Rules in one place:** `app/config.py`, which `data/rules.json` overrides. It holds the limits, PO tolerance, look-alike distance, approval threshold, prices and chart of accounts. A changed requirement is a one-line edit.
+- **Kill-on-stage in one command:** `.venv/bin/python scripts/kill_demo.py`.
+  1. The process is killed right after the payout was created, before the desk recorded it.
+  2. It restarts twice.
+  3. The result is **exactly one payout**, sent with the same idempotency key.
+- **Cost & price** (`/economics`, measured from the ledger at ₹25.2 per credit):
+
+  | Job | Measured cost | Our price |
+  |---|---|---|
+  | New vendor check | ₹105.84 | ₹250 |
+  | Invoice, all-in (first batch, incl. vendor checks) | ₹39.69 | ₹60 |
+  | Invoice from a repeat vendor | ₹0 (cached) | ₹60 |
+  | Bank line | ₹2.52 | — |
+
+  Prices are ours, not a market quote.
+- **Decision letter per invoice** (`/invoices/{id}/letter`, shown in the audit trail): a plain-language account of why it was paid or held, with every source.
+- **Inbox without a model key:** `.txt`/`.eml` invoices are read by fixed patterns, with the exact line as evidence for each field. PDFs need the Claude reader (`ANTHROPIC_API_KEY`).
+
 ## Vendor check (Trust & Compliance 5.1 + 5.2)
 If a vendor record has no status from the Trust service, the desk runs its own check, live, and caches the result per vendor. The **Vendor check** tab runs the same check on any name and website.
 
