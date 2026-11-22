@@ -17,7 +17,17 @@ flowchart LR
   S2 -->|retry 429/5xx · cache · ledger| CD[Crustdata API<br/>/company/identify]
   S5 -->|X-Payout-Idempotency| RZP[RazorpayX test mode]
   Pipeline --> OUT[Paid · Held + reason · Cannot verify + what is missing<br/>audit trail with sources]
+  USER[Person: Google sign-in<br/>signed session] -->|approve / reject<br/>2 people ≥ ₹1 lakh| Q
+  BANK[Bank-statement lines] --> BP[Bank posting<br/>vendor master → Crustdata if one company owns the name → else cannot verify<br/>duplicates held · chart of accounts]
+  BP --> CD
+  RULES[(Rules file<br/>limits · tolerances · thresholds · prices · accounts)] -.-> Pipeline
+  RULES -.-> BP
 ```
+
+Also in the picture:
+- **Vendor check (5.1 + 5.2)** runs inside step 1 when the vendor master has no Trust status (`app/trust.py`). It uses `/company/identify`, `/company/enrich`, `/web/enrich/live` and `/web/search/live`, and is cached per vendor.
+- **Payouts** go to RazorpayX test mode when its keys are set, otherwise to a local sandbox. The sandbox is labelled as simulated and keeps the same idempotency contract.
+- **Cost ledger:** every Crustdata, model and payout call is recorded there. `/economics` turns it into cost per job.
 
 Where things sit:
 - **Data calls:** `app/crustdata.py`. It retries with backoff on 429, 5xx and timeouts, caches every response in `http_cache`, and raises `SourceUnavailable`, which holds the case rather than reading silence as an answer.
