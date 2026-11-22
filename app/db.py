@@ -50,7 +50,21 @@ CREATE TABLE IF NOT EXISTS approvals (
     decision    TEXT,                      -- NULL = waiting | approved | rejected
     decided_by  TEXT,
     decided_at  REAL,
-    note        TEXT
+    note        TEXT,
+    vendor_hash TEXT                       -- vendor record (bank, GSTIN, domain, status) when approved
+);
+CREATE TABLE IF NOT EXISTS drafts (
+    invoice_id  TEXT PRIMARY KEY,          -- drafted, NEVER sent: a person checks and sends it
+    to_email    TEXT,
+    phone       TEXT,
+    subject     TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    created_at  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS vendor_checks (
+    vendor_key TEXT PRIMARY KEY,
+    report     TEXT NOT NULL,
+    checked_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS payments (
     invoice_id  TEXT PRIMARY KEY,          -- one payment row per invoice, ever

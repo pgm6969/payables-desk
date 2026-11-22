@@ -17,7 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from . import checks, vendors as vendor_mod
+from . import checks, trust, vendors as vendor_mod
 from .crustdata import BudgetExceeded, Crustdata, SourceUnavailable
 from .db import connect, log_event, tx
 from .payments import ProviderNotConfigured, get_provider
@@ -97,9 +97,22 @@ def _credits_used(conn, run_id):
 
 # ---------------------------------------------------------------- steps
 
-def step_vendor(conn, inv_id, inv, vendor_list):
-    """Gate 1: the payee must be a vendor the Trust service has CLEARED."""
+def step_vendor(conn, inv_id, inv, vendor_list, cd=None):
+    """Gate 1: the payee must be a CLEARED vendor: cleared by the Trust service if it
+    sent a status, otherwise by our own live vendor check (5.1 + 5.2), cached per vendor."""
     vendor, how = vendor_mod.find_vendor(inv, vendor_list)
+    if vendor and not vendor.get("status") and cd is not None:
+        try:
+            trust.check_and_cache(conn, cd, vendor)  # network: outside any transaction
+        except SourceUnavailable as e:
+            with tx(conn):
+                _hold(conn, inv_id, "source_unavailable", f"Vendor check could not reach Crustdata ({e}); held rather than guessed.")
+            return
+        except BudgetExceeded as e:
+            with tx(conn):
+                _hold(conn, inv_id, "cost_limit", f"Cost limit reached during the vendor check: {e}")
+            return
+    vendor = trust.effective(conn, vendor)
     with tx(conn):
         if not vendor:
             _cannot_verify(conn, inv_id, "no_vendor_record", f"Payee '{inv.get('vendor_name')}': {how}.",
@@ -109,9 +122,15 @@ def step_vendor(conn, inv_id, inv, vendor_list):
         for ev in inv.get("_evidence", []):
             _source(conn, inv_id, f"invoice {ev.get('field')}", f"inbox:{inv.get('_message', 'request')}",
                     ev.get("field", ""), ev.get("quote", ""), None, None)
-        sid = _source(conn, inv_id, f"vendor record status = {vendor.get('status')}",
-                      "trust-service:vendors/" + str(vendor.get("vendor_id")), "status", vendor.get("status"),
-                      vendor.get("verified_at"))
+        report = vendor.get("_trust")
+        if report:  # our own vendor check: every fact with its record
+            sids = [_source(conn, inv_id, f["fact"], f["url"], f["field"], f["value"], f.get("record_date"), f.get("retrieved_at"))
+                    for f in report["facts"]]
+            sid = sids[-1] if sids else None
+        else:
+            sid = _source(conn, inv_id, f"vendor record status = {vendor.get('status')}",
+                          "trust-service:vendors/" + str(vendor.get("vendor_id")), "status", vendor.get("status"),
+                          vendor.get("verified_at"))
         try:
             amount = checks.to_paise(inv.get("amount"))
         except ValueError as e:
@@ -124,12 +143,24 @@ def step_vendor(conn, inv_id, inv, vendor_list):
         status = (vendor.get("status") or "").lower()
         if status != "cleared":
             _set(conn, inv_id, "RECEIVED", None, None, **cols)
-            _hold(conn, inv_id, "vendor_not_cleared",
-                  f"Vendor {vendor.get('legal_name')} is '{status}' in Trust & Compliance, not cleared.", [sid])
+            why = report["summary"] if report else f"Vendor {vendor.get('legal_name')} is '{status or 'not checked'}' in Trust & Compliance, not cleared."
+            _hold(conn, inv_id, "vendor_not_cleared", f"Vendor check: {report['verdict'] if report else status}. {why}", [sid] if sid else [])
             return
+        # GSTIN: well-formed, check character, PAN entity type, and the same GSTIN as the vendor master
+        g_inv = vendor_mod.norm_gstin(inv.get("vendor_gstin"))
+        probs = checks.gstin_problems(g_inv, vendor.get("legal_name"))
+        if g_inv and vendor.get("gstin") and g_inv != vendor_mod.norm_gstin(vendor["gstin"]):
+            probs.append(("gstin_mismatch", f"Invoice GSTIN {g_inv} is not the vendor's GSTIN {vendor['gstin']}."))
+        if probs:
+            _set(conn, inv_id, "RECEIVED", None, None, **cols)
+            for code, text in probs[1:]:
+                _set(conn, inv_id, "RECEIVED", None, {"code": code, "text": text})
+            _hold(conn, inv_id, probs[0][0], probs[0][1])
+            return
+        summary = f" {report['summary']}" if report else ""
         _set(conn, inv_id, "VENDOR_OK", None,
-             {"code": "vendor_cleared", "text": f"Matched vendor {vendor.get('legal_name')} by {how.replace('_', ' ')}.",
-              "source_ids": [sid]}, **cols)
+             {"code": "vendor_cleared", "text": f"Matched vendor {vendor.get('legal_name')} by {how.replace('_', ' ')}.{summary}",
+              "source_ids": [sid] if sid else []}, **cols)
 
 
 def step_identity(conn, inv_id, inv, vendor, cd: Crustdata):
@@ -137,6 +168,15 @@ def step_identity(conn, inv_id, inv, vendor, cd: Crustdata):
     company the vendor was cleared as (catches lookalike names)."""
     inv_domain = vendor_mod.norm_domain(inv.get("vendor_domain") or "")
     expected_id = vendor.get("crustdata_company_id")
+    v_domain = vendor_mod.norm_domain(vendor.get("domain") or "")
+    # free check first: a near-miss of the vendor's own domain is impersonation, no lookup needed
+    if inv_domain and v_domain and inv_domain != v_domain:
+        dist = checks.edit_distance(inv_domain, v_domain)
+        if dist <= 3:
+            with tx(conn):
+                _hold(conn, inv_id, "lookalike_sender",
+                      f"Sent from {inv_domain}, a look-alike of the vendor's domain {v_domain} (edit distance {dist}). Possible impersonation.")
+            return
     if not inv_domain or not expected_id:
         with tx(conn):
             _set(conn, inv_id, "IDENTITY_OK", None,
@@ -211,17 +251,44 @@ def step_checks(conn, inv_id, inv, vendor, pos, bank_changes=(), vendor_list=())
         ok, why = checks.match_po(inv, pos, row["amount_paise"])
         if not ok:
             problems.append(("po_mismatch", why))
+        else:  # 4. the PO must not already be billed by other invoices
+            po = next(p for p in pos if str(p.get("po_number", "")).strip().lower() == str(inv.get("po_number", "")).strip().lower())
+            po_paise = checks.to_paise(po.get("amount"))
+            billed = checks.billed_against_po(conn, inv_id, row["vendor_id"], inv.get("po_number"))
+            if billed + row["amount_paise"] > po_paise * 1.01:
+                problems.append(("po_already_billed",
+                                 f"PO {po.get('po_number')} (₹{po_paise/100:,.2f}) already has ₹{billed/100:,.2f} invoiced; "
+                                 f"this invoice would bill it beyond its value."))
         if problems:
             for code, text in problems[1:]:
                 _set(conn, inv_id, row["state"], None, {"code": code, "text": text})
             _hold(conn, inv_id, problems[0][0], problems[0][1])
+            if any(c in ("bank_change_requested", "bank_details_changed") for c, _ in problems):
+                _draft_callback(conn, inv_id, vendor)
             return
         _set(conn, inv_id, "AWAITING_APPROVAL", "ready",
              {"code": "checks_passed", "text": f"No duplicate; verified account; {why}."})
         conn.execute("INSERT OR IGNORE INTO approvals(invoice_id) VALUES (?)", (inv_id,))
 
 
-def step_approval(conn, inv_id):
+def _draft_callback(conn, inv_id, vendor):
+    """A call-back message to the contact ON FILE (never to whoever asked). Drafted only; a person sends it."""
+    c = vendor.get("contact") or {}
+    conn.execute(
+        "INSERT OR IGNORE INTO drafts(invoice_id, to_email, phone, subject, body, created_at) VALUES (?,?,?,?,?,?)",
+        (inv_id, c.get("email"), c.get("phone"), f"Confirming a bank detail change for {vendor.get('legal_name')}",
+         f"Hello {c.get('name') or ''},\n\nWe received a request to pay {vendor.get('legal_name')} into a different bank account. "
+         f"Before we change anything, please confirm by calling us back from the number we have on file. Until then we will "
+         f"pay only the account verified at onboarding.\n\nAccounts Payable", time.time()))
+
+
+def vendor_hash(v: dict | None) -> str:
+    v = v or {}
+    keys = {"bank": v.get("verified_bank_account"), "gstin": v.get("gstin"), "domain": v.get("domain"), "status": v.get("status")}
+    return hashlib.sha256(json.dumps(keys, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def step_approval(conn, inv_id, vendor=None):
     with tx(conn):
         a = conn.execute("SELECT decision, decided_by FROM approvals WHERE invoice_id=?", (inv_id,)).fetchone()
         if not a or not a["decision"]:
@@ -229,6 +296,8 @@ def step_approval(conn, inv_id):
         if a["decision"] == "rejected":
             _set(conn, inv_id, "REJECTED", "rejected", {"code": "rejected_by_person", "text": f"Rejected by {a['decided_by']}."})
         else:
+            # snapshot what the person approved; payment checks it has not changed since
+            conn.execute("UPDATE approvals SET vendor_hash=? WHERE invoice_id=?", (vendor_hash(vendor), inv_id))
             _set(conn, inv_id, "APPROVED", None, {"code": "approved_by_person", "text": f"Approved by {a['decided_by']}."})
         return True
 
@@ -241,6 +310,14 @@ def step_pay(conn, inv_id, vendor, provider):
             _cannot_verify(conn, inv_id, "not_payable", "Approved, but the vendor is not cleared or has no verified account.",
                            missing="vendor cleared by Trust & Compliance with a verified bank account")
         return
+    if not conn.execute("SELECT 1 FROM payments WHERE invoice_id=?", (inv_id,)).fetchone():
+        a = conn.execute("SELECT vendor_hash FROM approvals WHERE invoice_id=?", (inv_id,)).fetchone()
+        if a and a["vendor_hash"] and a["vendor_hash"] != vendor_hash(vendor):
+            with tx(conn):
+                conn.execute("UPDATE approvals SET decision=NULL, decided_by=NULL, decided_at=NULL, vendor_hash=NULL WHERE invoice_id=?", (inv_id,))
+                _set(conn, inv_id, "AWAITING_APPROVAL", "held",
+                     {"code": "vendor_changed", "text": "The vendor record (bank, GSTIN, domain or status) changed after approval. Approve again."})
+            return
     acct = vendor["verified_bank_account"]
     # (1) write the idempotency key first — exactly once per invoice, ever.
     with tx(conn):
@@ -304,16 +381,16 @@ def process(run_id: str, conn=None, provider=None, cd=None, vendor_list=None) ->
                 break
             if STEP_DELAY:
                 time.sleep(STEP_DELAY)
-            vendor = by_id.get(conn.execute("SELECT vendor_id FROM invoices WHERE invoice_id=?", (inv_id,)).fetchone()["vendor_id"])
+            vendor = trust.effective(conn, by_id.get(conn.execute("SELECT vendor_id FROM invoices WHERE invoice_id=?", (inv_id,)).fetchone()["vendor_id"]))
             try:
                 if state == "RECEIVED":
-                    step_vendor(conn, inv_id, inv, vendor_list)
+                    step_vendor(conn, inv_id, inv, vendor_list, cd)
                 elif state == "VENDOR_OK":
                     step_identity(conn, inv_id, inv, vendor, cd)
                 elif state == "IDENTITY_OK":
                     step_checks(conn, inv_id, inv, vendor, pos, req.get("bank_change_requests", []), vendor_list)
                 elif state == "AWAITING_APPROVAL":
-                    if not step_approval(conn, inv_id):
+                    if not step_approval(conn, inv_id, vendor):
                         break  # waiting for a person
                 elif state in ("APPROVED", "PAYING"):
                     if provider is None:

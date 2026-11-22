@@ -13,6 +13,24 @@ Today, one firm clears vendors and another pays them. Fraud slips through betwee
 - No invoice is paid unless the vendor was **cleared** by the Trust and compliance service.
 - No invoice is paid to an account that service did not **verify**.
 
+## Vendor check (Trust & Compliance 5.1 + 5.2)
+If a vendor record has no status from the Trust service, the desk runs its own check, live, and caches the result per vendor. The **Vendor check** tab runs the same check on any name and website.
+
+1. **Resolve by domain**, keeping only a Crustdata record that lists that domain. A name alone is ambiguous.
+2. **Profile:** active, year founded, headcount, HQ. Flags a company that is inactive, newly formed, tiny, or a different company than the vendor master names.
+3. **Director:** must appear among the founders, CXOs or decision makers on record. Otherwise the result is **cannot verify**.
+4. **Website:** live, and names the company.
+5. **Adverse media:** the company is flagged only for serious legal terms about the company itself, so news where it was the victim of a scam doesn't count. A director is flagged only when an article names the person **and** the company. Other articles are cleared as namesakes and kept only as a count. A match is a lead for a person to read, never a finding.
+
+The result is **CLEAR**, **HOLD** (with flags) or **CANNOT_VERIFY** (naming what's missing). A new vendor costs about 4–5 credits; later invoices from that vendor cost nothing.
+
+Other checks:
+- GSTIN check character and PAN entity type.
+- A look-alike sender domain, caught by edit distance before any lookup.
+- A PO already billed.
+- A vendor record that changed after approval, which holds the invoice for re-approval.
+- A drafted call-back to the contact **on file** on any bank-change request. It is never sent by the desk.
+
 ## Input → finished result
 **Input, usually:** the accounts inbox, a folder with one file per message:
 - `.eml` emails, with any PDF attachments
@@ -55,6 +73,10 @@ Every payment waits for a person to **approve** or **reject** it. The person can
 | Source | What for | Where |
 |---|---|---|
 | Anthropic Messages API (`claude-opus-5-5`) | Transcribes inbox emails and PDFs into invoice fields, with a quote for each; results cached by message content | `app/inbox.py` |
+| Crustdata `POST /company/enrich` | Vendor check 5.1: name, status, year founded, headcount, HQ, founders/CXOs (director on record?) | `app/trust.py` |
+| Crustdata `POST /web/enrich/live` | Vendor check 5.1: the website is live and names the company (tries `www.`, then browser-like retrieval) | `app/trust.py` |
+| Crustdata `POST /web/search/live` | Vendor check 5.2: adverse news for the company and director; namesakes cleared, matches escalated as leads | `app/trust.py` |
+| Local computation | GSTIN format, check character and PAN entity type; look-alike sender (edit distance) | `app/checks.py` |
 | Crustdata `POST /company/identify` | Resolves the invoice's domain to a company and checks it is the cleared vendor (lookalike check) | `app/crustdata.py`, `app/pipeline.py::step_identity` |
 | Trust and compliance vendor records | Vendor status, verified bank account, Crustdata company ID | `app/vendors.py`, [docs/vendor_contract.md](docs/vendor_contract.md) |
 | Client purchase orders (from the request) | Matching invoices to POs | `app/checks.py` |

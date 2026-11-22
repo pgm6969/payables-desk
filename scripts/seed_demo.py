@@ -21,15 +21,17 @@ from app.db import connect  # noqa: E402
 
 # Sample vendor records in the Trust & Compliance contract format (test data).
 VENDORS = [
+    # No "status": the desk runs its own live vendor check (5.1 + 5.2) on each vendor.
     {"vendor_id": "V-BD", "legal_name": "Blue Dart Express Limited", "gstin": "27AAACB0446L1ZS", "domain": "bluedart.com",
-     "crustdata_company_id": 736, "status": "cleared", "verified_at": "2026-11-22",
+     "director": "Balfour Manuel", "contact": {"name": "AP desk", "email": "ap-test@bluedart.example", "phone": "+91-22-0000-0000"},
      "verified_bank_account": {"ifsc": "HDFC0000001", "account_no": "50100012345678"}},
     {"vendor_id": "V-DL", "legal_name": "Delhivery Limited", "gstin": "06AAPCS9575E1ZR", "domain": "delhivery.com",
-     "crustdata_company_id": 5798, "status": "cleared", "verified_at": "2026-11-22",
+     "contact": {"name": "Vendor desk", "email": "vendors-test@delhivery.example", "phone": "+91-124-000-0000"},
      "verified_bank_account": {"ifsc": "ICIC0000104", "account_no": "010405001234"}},
-    {"vendor_id": "V-SX", "legal_name": "Safexpress Private Limited", "gstin": "07AAECS4363H1ZQ", "domain": "safexpress.com",
-     "crustdata_company_id": 12981, "status": "cleared", "verified_at": "2026-11-22",
+    {"vendor_id": "V-SX", "legal_name": "Safexpress Private Limited", "gstin": "07AAECS4363H1ZA", "domain": "safexpress.com",
      "verified_bank_account": {"ifsc": "SBIN0000691", "account_no": "30987654321"}},
+    {"vendor_id": "V-SC", "legal_name": "Shreeji Cargo Movers Private Limited", "gstin": "", "domain": "shreejicargomovers.in",
+     "verified_bank_account": {"ifsc": "PUNB0000001", "account_no": "112233445566"}},
 ]
 
 REQUEST = {
@@ -43,12 +45,18 @@ REQUEST = {
         {"invoice_no": "DLV-88231", "vendor_name": "Delhivery Limited", "vendor_gstin": "06AAPCS9575E1ZR",
          "vendor_domain": "delhivery.com", "amount": "₹42,300", "invoice_date": "2026-10-12", "po_number": "PO-1002",
          "_message": "sample-03.eml"},
-        {"invoice_no": "SFX/7781", "vendor_name": "Safexpress Pvt Ltd", "vendor_gstin": "07AAECS4363H1ZQ",
+        {"invoice_no": "SFX/7781", "vendor_name": "Safexpress Pvt Ltd", "vendor_gstin": "07AAECS4363H1ZA",
          "vendor_domain": "safexpress.com", "amount": "₹61,750", "invoice_date": "2026-10-14", "po_number": "PO-1003",
          "_message": "sample-04.eml"},
         {"invoice_no": "INV-5521", "vendor_name": "Blue Dart Express", "vendor_gstin": "",
          "vendor_domain": "bluedart-logistics.in", "amount": "₹9,800", "invoice_date": "2026-10-15", "po_number": "PO-1001",
          "_message": "sample-05.eml"},
+        {"invoice_no": "SCM/118", "vendor_name": "Shreeji Cargo Movers Pvt Ltd", "vendor_gstin": "",
+         "vendor_domain": "shreejicargomovers.in", "amount": "₹27,400", "invoice_date": "2026-10-16", "po_number": "PO-1004",
+         "_message": "sample-08.txt"},
+        {"invoice_no": "BD/2026/0057", "vendor_name": "Blue Dart Express Ltd", "vendor_gstin": "27AAACB0446L1ZS",
+         "vendor_domain": "bluedartt.com", "amount": "₹12,250", "invoice_date": "2026-10-17", "po_number": "PO-1005",
+         "_message": "sample-09.eml"},
         {"invoice_no": "", "vendor_name": "PAYTM*SHARMA TRD", "vendor_gstin": "", "vendor_domain": "",
          "amount": "₹4,000", "invoice_date": "2026-10-09", "po_number": "", "_message": "sample-06.txt"},
     ],
@@ -59,9 +67,10 @@ REQUEST = {
     ],
     "purchase_orders": [
         {"po_number": "PO-1001", "amount": 18500}, {"po_number": "PO-1002", "amount": 42300},
-        {"po_number": "PO-1003", "amount": 55000},
+        {"po_number": "PO-1003", "amount": 55000}, {"po_number": "PO-1004", "amount": 27400},
+        {"po_number": "PO-1005", "amount": 12250},
     ],
-    "limits": {"cost_credits": 5, "time_s": 600},
+    "limits": {"cost_credits": 30, "time_s": 900},
 }
 
 

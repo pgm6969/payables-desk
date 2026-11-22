@@ -67,6 +67,62 @@ def find_duplicates(conn, invoice_id, vendor_id, inv_no_norm, amount_paise, inv_
     return hits
 
 
+GST_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+PAN_TYPES = {"C": "company", "F": "firm / LLP", "P": "individual (proprietor)", "H": "HUF", "T": "trust",
+             "A": "association of persons", "B": "body of individuals", "G": "government", "L": "local authority",
+             "J": "artificial juridical person"}
+
+
+def gstin_check_char(first14: str) -> str:
+    """GSTIN check character (mod-36, alternating weights 1 and 2)."""
+    total = 0
+    for i, ch in enumerate(first14):
+        p = GST_CHARS.index(ch) * (2 if i % 2 else 1)
+        total += p // 36 + p % 36
+    return GST_CHARS[(36 - total % 36) % 36]
+
+
+def gstin_problems(gstin: str, legal_name: str = "") -> list[tuple[str, str]]:
+    """Free, local checks. Returns [(code, text)]; empty when the GSTIN is well-formed and fits the legal form."""
+    g = re.sub(r"[^0-9A-Z]", "", (gstin or "").upper())
+    if not g:
+        return []
+    if not re.fullmatch(r"\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]", g):
+        return [("gstin_malformed", f"GSTIN {g} is not in the 15-character GSTIN format.")]
+    if gstin_check_char(g[:14]) != g[14]:
+        return [("gstin_check_digit", f"GSTIN {g} fails its check character (expected {gstin_check_char(g[:14])}, got {g[14]}): mistyped or forged.")]
+    pan_type = g[5]
+    n = (legal_name or "").lower()
+    if re.search(r"\b(ltd|limited|pvt|private)\b", n) and pan_type != "C":
+        return [("gstin_entity_type", f"{legal_name} is a company, but its GSTIN's PAN is for a {PAN_TYPES.get(pan_type, pan_type)}.")]
+    if re.search(r"\bllp\b", n) and pan_type != "F":
+        return [("gstin_entity_type", f"{legal_name} is an LLP, but its GSTIN's PAN is for a {PAN_TYPES.get(pan_type, pan_type)}.")]
+    return []
+
+
+def edit_distance(a: str, b: str) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def billed_against_po(conn, invoice_id, vendor_id, po_number) -> int:
+    """Paise already committed against this PO by other invoices (ready, approved, paying or paid)."""
+    tot = 0
+    for r in conn.execute(
+        "SELECT invoice_id, raw, amount_paise FROM invoices WHERE vendor_id=? AND invoice_id<>? "
+        "AND (state IN ('APPROVED','PAYING','PAID') OR (state='AWAITING_APPROVAL' AND outcome='ready'))",
+        (vendor_id, invoice_id)):
+        import json as _j
+        if str(_j.loads(r["raw"]).get("po_number", "")).strip().lower() == str(po_number or "").strip().lower():
+            tot += r["amount_paise"] or 0
+    return tot
+
+
 def match_po(invoice: dict, pos: list[dict], amount_paise: int):
     """Returns (ok, reason). Missing PO is a hold, not a guess."""
     po_no = (invoice.get("po_number") or "").strip()
