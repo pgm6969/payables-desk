@@ -175,10 +175,30 @@ def meta():
 @app.get("/state")
 def state():
     conn = connect()
-    rows = conn.execute("SELECT invoice_id, raw, state, outcome, reasons, updated_at FROM invoices ORDER BY rowid DESC LIMIT 200").fetchall()
+    rows = conn.execute("SELECT i.invoice_id, i.raw, i.state, i.outcome, i.reasons, i.updated_at, p.provider_status, p.provider_ref "
+                        "FROM invoices i LEFT JOIN payments p ON p.invoice_id=i.invoice_id ORDER BY i.rowid DESC LIMIT 200").fetchall()
     return [{"invoice_id": r["invoice_id"], "raw": {k: v for k, v in json.loads(r["raw"]).items() if k != "bank_account"},
              "state": r["state"], "outcome": r["outcome"], "updated_at": r["updated_at"],
+             "payout_status": r["provider_status"], "payout_id": r["provider_ref"],
              "reasons": json.loads(r["reasons"])} for r in rows]
+
+
+@app.post("/payouts/sync")
+def payouts_sync():
+    """Ask RazorpayX (test mode) for the latest status of payouts still in flight."""
+    from .payments import ProviderNotConfigured
+    try:
+        with _lock:
+            return {"updated": pipeline.sync_payouts(connect())}
+    except ProviderNotConfigured as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/resume")
+def resume_now():
+    """Continue every unfinished run now (e.g. after Razorpay keys were added or a timeout)."""
+    with _lock:
+        return pipeline.resume_all(connect())
 
 
 @app.get("/", response_class=HTMLResponse)

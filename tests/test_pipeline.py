@@ -44,7 +44,7 @@ class FakePay:
         self.by_key = {}
         self.crash_after_call = crash_after_call
 
-    def pay(self, key, amount, name, acct, ref):
+    def pay(self, key, amount, name, acct, ref, **kw):
         if key not in self.by_key:  # provider-side idempotency, like Razorpay
             self.by_key[key] = f"pout_{len(self.by_key) + 1}"
         if self.crash_after_call:

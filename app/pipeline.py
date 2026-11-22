@@ -20,9 +20,9 @@ from datetime import datetime, timezone
 from . import checks, trust, vendors as vendor_mod
 from .crustdata import BudgetExceeded, Crustdata, SourceUnavailable
 from .db import connect, log_event, tx
-from .payments import ProviderNotConfigured, get_provider
+from .payments import FINAL_BAD, PayoutRejected, PayoutUnknown, ProviderNotConfigured, get_provider
 
-TERMINAL = {"PAID", "CANNOT_VERIFY", "REJECTED"}
+TERMINAL = {"PAID", "CANNOT_VERIFY", "REJECTED", "PAYOUT_FAILED"}
 WAITING = {"AWAITING_APPROVAL"}
 DEFAULT_COST_LIMIT = float(os.environ.get("PAYDESK_COST_LIMIT", "10"))  # Crustdata credits per run
 DEFAULT_TIME_LIMIT = int(os.environ.get("PAYDESK_TIME_LIMIT", "600"))  # seconds per run
@@ -331,22 +331,77 @@ def step_pay(conn, inv_id, vendor, provider):
             )
             _set(conn, inv_id, "PAYING", None, None)
         p = conn.execute("SELECT * FROM payments WHERE invoice_id=?", (inv_id,)).fetchone()
-    if p["status"] == "paid":
+    if p["provider_ref"]:  # the provider already accepted this payout (we crashed before marking it)
         with tx(conn):
             _set(conn, inv_id, "PAID", "paid", None)
-        return
-    # (2) call the provider with the SAME key (a retry after a crash returns the first payout)
+        return True
+    if p["status"] == "rejected":
+        return True
+    # (2) call the provider with the SAME key: after a crash or timeout this is a retry, not a new payout
     t0 = time.time()
-    ref = provider.pay(p["idempotency_key"], p["amount_paise"], vendor["legal_name"], acct, inv_id)
+    memo = "Inv " + str(json.loads(row["raw"]).get("invoice_no") or "")
+    try:
+        res = provider.pay(p["idempotency_key"], p["amount_paise"], vendor["legal_name"], acct, inv_id,
+                           contact=vendor.get("contact"), memo=memo)
+    except PayoutUnknown as e:
+        with tx(conn):
+            conn.execute("UPDATE payments SET status='unknown', detail=?, updated_at=? WHERE invoice_id=?", (str(e), time.time(), inv_id))
+            conn.execute("INSERT INTO ledger(run_id, invoice_id, service, endpoint, latency_ms, status, at) VALUES (?,?,?,?,?,?,?)",
+                         (row["run_id"], inv_id, "payment", provider.name, int((time.time() - t0) * 1000), "unknown", time.time()))
+            log_event(conn, row["run_id"], inv_id, "payout_unknown",
+                      {"why": str(e), "next": "retry with the same idempotency key on resume"})
+        return False  # stay in PAYING; resume retries with the same key
+    except PayoutRejected as e:
+        with tx(conn):
+            conn.execute("UPDATE payments SET status='rejected', detail=?, updated_at=? WHERE invoice_id=?", (str(e), time.time(), inv_id))
+            conn.execute("INSERT INTO ledger(run_id, invoice_id, service, endpoint, latency_ms, status, at) VALUES (?,?,?,?,?,?,?)",
+                         (row["run_id"], inv_id, "payment", provider.name, int((time.time() - t0) * 1000), "rejected", time.time()))
+            _set(conn, inv_id, "PAYOUT_FAILED", "payout_failed",
+                 {"code": "payout_rejected", "text": f"The payment provider refused the payout; nothing was paid. {e}"})
+        return True
+    if isinstance(res, str):  # simple providers return just a reference
+        res = {"id": res, "status": "processed", "utr": None, "detail": None}
+    pstatus = (res.get("status") or "").lower()
     # (3) record the result
     with tx(conn):
-        conn.execute("UPDATE payments SET status='paid', provider_ref=?, updated_at=? WHERE invoice_id=?",
-                     (ref, time.time(), inv_id))
+        conn.execute("UPDATE payments SET status=?, provider_ref=?, provider_status=?, utr=?, detail=?, updated_at=? WHERE invoice_id=?",
+                     ("failed" if pstatus in FINAL_BAD else "paid", res["id"], pstatus, res.get("utr"), res.get("detail"), time.time(), inv_id))
         conn.execute("INSERT INTO ledger(run_id, invoice_id, service, endpoint, latency_ms, status, at) VALUES (?,?,?,?,?,?,?)",
-                     (row["run_id"], inv_id, "payment", provider.name, int((time.time() - t0) * 1000), "paid", time.time()))
-        _set(conn, inv_id, "PAID", "paid",
-             {"code": "paid", "text": f"Paid ₹{p['amount_paise']/100:,.2f} to {vendor['legal_name']} "
-                                      f"{p['account_masked']} ({provider.name} ref {ref})."})
+                     (row["run_id"], inv_id, "payment", provider.name, int((time.time() - t0) * 1000), pstatus or "paid", time.time()))
+        if pstatus in FINAL_BAD:
+            _set(conn, inv_id, "PAYOUT_FAILED", "payout_failed",
+                 {"code": "payout_failed", "text": f"Payout {res['id']} is '{pstatus}': {res.get('detail') or 'no reason given'}."})
+        else:
+            _set(conn, inv_id, "PAID", "paid",
+                 {"code": "paid", "text": f"Payout {res['id']} of ₹{p['amount_paise']/100:,.2f} to {vendor['legal_name']} "
+                                          f"{p['account_masked']} via {provider.name}: {pstatus or 'accepted'}."})
+    return True
+
+
+def sync_payouts(conn=None, provider=None) -> list:
+    """Ask the provider for the latest status of payouts still in flight (queued/processing).
+    A payout that ends failed or reversed puts its invoice in PAYOUT_FAILED for a person."""
+    conn = conn or connect()
+    if provider is None:
+        provider = get_provider()
+    out = []
+    for p in conn.execute("SELECT * FROM payments WHERE provider_ref IS NOT NULL AND (provider_status IS NULL OR provider_status IN ('queued','pending','processing'))").fetchall():
+        try:
+            res = provider.fetch(p["provider_ref"])
+        except (PayoutUnknown, PayoutRejected) as e:
+            out.append({"invoice_id": p["invoice_id"], "error": str(e)})
+            continue
+        st = (res.get("status") or "").lower()
+        with tx(conn):
+            conn.execute("UPDATE payments SET provider_status=?, utr=COALESCE(?, utr), detail=?, status=?, updated_at=? WHERE invoice_id=?",
+                         (st, res.get("utr"), res.get("detail"), "failed" if st in FINAL_BAD else "paid", time.time(), p["invoice_id"]))
+            run_id = conn.execute("SELECT run_id FROM invoices WHERE invoice_id=?", (p["invoice_id"],)).fetchone()["run_id"]
+            log_event(conn, run_id, p["invoice_id"], "payout_status", {"status": st, "utr": res.get("utr")})
+            if st in FINAL_BAD:
+                _set(conn, p["invoice_id"], "PAYOUT_FAILED", "payout_failed",
+                     {"code": "payout_failed", "text": f"Payout {p['provider_ref']} ended '{st}': {res.get('detail') or res.get('reason') or 'no reason given'}."})
+        out.append({"invoice_id": p["invoice_id"], "status": st, "utr": res.get("utr")})
+    return out
 
 
 # ---------------------------------------------------------------- driver
@@ -397,7 +452,8 @@ def process(run_id: str, conn=None, provider=None, cd=None, vendor_list=None) ->
                         with tx(conn):
                             log_event(conn, run_id, inv_id, "payment_blocked", {"why": provider_err})
                         break
-                    step_pay(conn, inv_id, vendor, provider)
+                    if step_pay(conn, inv_id, vendor, provider) is False:
+                        break  # provider did not answer: keep the key, retry on the next resume
                 else:
                     break
             except BudgetExceeded as e:

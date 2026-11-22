@@ -183,7 +183,8 @@
   </section>
 
   <section class="panel" id="tab-all" hidden>
-    <div class="panel-head"><h2>All invoices</h2><span class="muted">Newest first. Open any row for its audit trail.</span></div>
+    <div class="panel-head"><h2>All invoices</h2><span class="muted">Newest first. Open any row for its audit trail.
+      <button class="btn ghost" id="syncPayouts" style="margin-left:12px">Refresh payout status</button></span></div>
     <div id="alltable"></div>
   </section>
 
@@ -244,7 +245,9 @@ const store = { get(k){ try { return localStorage.getItem(k) } catch { return nu
 let ROWS = [], META = {};
 
 function statusOf(r) {
-  if (r.state === 'PAID') return ['paid', 'Paid'];
+  if (r.state === 'PAID') return ['paid', r.payout_status && r.payout_status !== 'processed' ? `Paid · ${r.payout_status}` : 'Paid'];
+  if (r.state === 'PAYOUT_FAILED') return ['held', 'Payout failed'];
+  if (r.state === 'PAYING') return ['ready', 'Paying · retrying same key'];
   if (r.state === 'CANNOT_VERIFY') return ['cannot_verify', 'Cannot verify'];
   if (r.state === 'REJECTED') return ['cannot_verify', 'Rejected'];
   if (r.state === 'APPROVED' || r.state === 'PAYING') return ['ready', META.payment_provider ? 'Paying' : 'Approved · payments not connected'];
@@ -343,7 +346,9 @@ async function openAudit(id) {
       <div class="src">To ${esc(a.draft.to_email || 'contact on file (none recorded)')} · call back ${esc(a.draft.phone || 'number on file')}
         <div class="note">Recipient comes from the vendor master, never from the message that asked for the change. A person checks and sends it.</div>
         <div class="draft"><b>${esc(a.draft.subject)}</b>\n\n${esc(a.draft.body)}</div></div>` : ''}
-    ${a.payment ? `<p class="label" style="margin-top:24px">Payment</p><div class="src">Idempotency key <code>${esc(a.payment.idempotency_key)}</code><br>${esc(a.payment.provider)} · ${esc(a.payment.status)} · ${money(a.payment.amount_paise / 100)} to ${esc(a.payment.account_masked)}${a.payment.provider_ref ? ' · ref ' + esc(a.payment.provider_ref) : ''}</div>` : ''}
+    ${a.payment ? `<p class="label" style="margin-top:24px">Payment · RazorpayX test mode</p><div class="src">Idempotency key <code>${esc(a.payment.idempotency_key)}</code> (saved before the call; a retry reuses it)<br>
+      ${money(a.payment.amount_paise / 100)} to ${esc(a.payment.account_masked)} · ${esc(a.payment.status)}${a.payment.provider_ref ? ' · payout ' + esc(a.payment.provider_ref) : ''}${a.payment.provider_status ? ' · ' + esc(a.payment.provider_status) : ''}${a.payment.utr ? ' · UTR ' + esc(a.payment.utr) : ''}
+      ${a.payment.detail ? `<div class="note">${esc(a.payment.detail)}</div>` : ''}</div>` : ''}
     <p class="label" style="margin-top:24px">Sources (${a.sources.length})</p>
     ${a.sources.map(s => `<div class="src"><div>${esc(s.fact)}</div><q>${esc(s.value)}</q><div class="note">${esc(s.url)} · field ${esc(s.field)}${s.record_date ? ' · record ' + esc(s.record_date) : ''} · retrieved ${esc(s.retrieved_at)}</div></div>`).join('') || '<div class="note">No sources recorded yet.</div>'}
     <p class="label" style="margin-top:24px">Events</p>
@@ -405,6 +410,14 @@ document.getElementById('vform').addEventListener('submit', async ev => {
   } catch (e) { msg.textContent = 'Check failed: ' + e; }
   finally { btn.disabled = false; }
 });
+
+document.getElementById('syncPayouts').onclick = async e => {
+  e.target.disabled = true;
+  const r = await fetch('/payouts/sync', {method: 'POST'});
+  const b = await r.json();
+  e.target.textContent = r.ok ? `Refreshed ${b.updated.length} payout(s)` : (b.detail || 'Payments not connected');
+  e.target.disabled = false; load();
+};
 
 function showTab(name) {
   document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));

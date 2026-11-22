@@ -31,6 +31,27 @@ Other checks:
 - A vendor record that changed after approval, which holds the invoice for re-approval.
 - A drafted call-back to the contact **on file** on any bank-change request. It is never sent by the desk.
 
+## Payments: RazorpayX Payouts, test mode only
+- A person approves every payout. The desk then pays the vendor's **verified** account, never an account named in an invoice or email, through `POST /v1/payouts` with `X-Payout-Idempotency`.
+- The idempotency key is a UUID saved in SQLite **before** the call. Each outcome is handled like this:
+
+| What happens | What the desk does |
+|---|---|
+| Accepted | Records the payout id and status (`queued` / `processing` / `processed`). |
+| Refused (4xx, e.g. invalid IFSC) | Invoice goes to **Payout failed** with the provider's reason. Nothing was paid and nothing is retried. |
+| No answer (timeout / 5xx) | Invoice stays **Paying**. `resume` retries with the **same** key, so RazorpayX treats it as the same payout. |
+| Later `failed` / `reversed` | `python -m app.cli payouts` (or **Refresh payout status** on the page) moves the invoice to **Payout failed**. |
+
+- A live key (`rzp_live_…`) is refused at start-up.
+
+**Set-up** (in RazorpayX, test mode):
+1. Generate keys under My Account & Settings → Developer Controls.
+2. Copy the test **Customer Identifier** from My Account & Settings → Banking. It is your `RAZORPAYX_ACCOUNT_NUMBER`.
+3. Add test balance.
+4. Put the three values in `.env`.
+
+Test payouts stay in `processing` until you move them in the Dashboard.
+
 ## Input → finished result
 **Input, usually:** the accounts inbox, a folder with one file per message:
 - `.eml` emails, with any PDF attachments

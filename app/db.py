@@ -70,8 +70,11 @@ CREATE TABLE IF NOT EXISTS payments (
     invoice_id  TEXT PRIMARY KEY,          -- one payment row per invoice, ever
     idempotency_key TEXT NOT NULL UNIQUE,  -- written BEFORE the provider is called
     provider    TEXT NOT NULL,
-    status      TEXT NOT NULL,             -- pending | paid | failed
-    provider_ref TEXT,
+    status      TEXT NOT NULL,             -- pending | unknown | paid | rejected | failed
+    provider_ref TEXT,                     -- provider payout id (pout_...) once accepted
+    provider_status TEXT,                  -- queued | processing | processed | reversed | failed ...
+    utr         TEXT,                      -- bank reference, when the provider gives one
+    detail      TEXT,
     amount_paise INTEGER NOT NULL,
     account_masked TEXT,
     created_at  REAL NOT NULL,
@@ -113,6 +116,13 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    # older databases: add columns introduced later (no-op if present)
+    for table, col in (("payments", "provider_status TEXT"), ("payments", "utr TEXT"), ("payments", "detail TEXT"),
+                       ("approvals", "vendor_hash TEXT")):
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 
