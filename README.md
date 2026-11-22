@@ -31,7 +31,18 @@ Other checks:
 - A vendor record that changed after approval, which holds the invoice for re-approval.
 - A drafted call-back to the contact **on file** on any bank-change request. It is never sent by the desk.
 
-## Payments: RazorpayX Payouts, test mode only
+## Payments: what actually runs today
+**Payouts are simulated.** We could not get RazorpayX test keys during the build (sign-up needs business KYC), so payouts run in a **local sandbox**, `app/payments.py::LocalSandbox`. No provider is called and no money moves. Everything it produces is labelled "local_sandbox (simulated)" on the page, in the audit trail and in the ledger.
+
+The sandbox keeps RazorpayX's payout contract, so the exactly-once logic is exercised for real:
+- one payout per idempotency key, stored in SQLite, so it survives restarts;
+- a retry with the same key returns the first payout;
+- the same key with a different amount or account is refused;
+- an IFSC starting `FAIL` is refused, to demo a rejected payout.
+
+The RazorpayX test-mode integration below is written and tested against a mocked API, but has not been run against Razorpay. It takes over automatically as soon as its three keys are in `.env`. `PAYDESK_PAYMENTS=razorpayx` forces it.
+
+## Payments: RazorpayX Payouts, test mode (ready, not yet connected)
 - A person approves every payout. The desk then pays the vendor's **verified** account, never an account named in an invoice or email, through `POST /v1/payouts` with `X-Payout-Idempotency`.
 - The idempotency key is a UUID saved in SQLite **before** the call. Each outcome is handled like this:
 

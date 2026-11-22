@@ -164,10 +164,12 @@ def meta():
     import os
     from .payments import ProviderNotConfigured, get_provider
     try:
-        get_provider(); provider = True
+        p = get_provider(connect())
+        provider, mode = True, p.name
     except ProviderNotConfigured:
-        provider = False
-    return {"demo": os.environ.get("PAYDESK_DEMO") == "1", "payment_provider": provider,
+        provider, mode = False, None
+    return {"demo": os.environ.get("PAYDESK_DEMO") == "1", "payment_provider": provider, "payment_mode": mode,
+            "payments_simulated": mode == "local_sandbox",
             "model_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
             "crustdata_key": bool(os.environ.get("CRUSTDATA_API_KEY"))}
 

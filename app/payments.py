@@ -121,5 +121,62 @@ class RazorpayXTest:
                 "reason": (p.get("status_details") or {}).get("reason")}
 
 
-def get_provider():
-    return RazorpayXTest()
+class LocalSandbox:
+    """SIMULATED payouts: no provider, no money moves. Used only when no RazorpayX test keys
+    are configured. It keeps RazorpayX's contract so the exactly-once logic is exercised for real:
+      - one payout per idempotency key, stored in SQLite (survives restarts);
+      - a retry with the same key returns the first payout;
+      - the same key with a different amount or account is refused (400);
+      - IFSC starting with 'FAIL' is refused like an invalid IFSC (to demo a rejected payout).
+    Everything it produces is labelled 'local_sandbox (simulated)'."""
+
+    name = "local_sandbox"
+    simulated = True
+
+    def __init__(self, conn=None):
+        from .db import connect
+        self.conn = conn or connect()
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS sandbox_payouts (
+            idempotency_key TEXT PRIMARY KEY, payout_id TEXT NOT NULL UNIQUE, amount_paise INTEGER NOT NULL,
+            ifsc TEXT NOT NULL, account_no TEXT NOT NULL, status TEXT NOT NULL, created_at REAL NOT NULL)""")
+
+    def pay(self, idempotency_key, amount_paise, payee_name, account, reference, contact=None, memo=""):
+        import hashlib
+        import time
+        if not re.fullmatch(r"[A-Za-z0-9_\- ]{4,36}", idempotency_key or ""):
+            raise PayoutRejected("sandbox 400 BAD_REQUEST_ERROR: idempotency key must be 4-36 letters, digits, - _ or space")
+        ifsc = str(account.get("ifsc", "")).upper()
+        acct = re.sub(r"\s", "", str(account.get("account_no", "")))
+        if ifsc.startswith("FAIL") or not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc):
+            raise PayoutRejected(f"sandbox 400 BAD_REQUEST_ERROR: Invalid IFSC Code (field ifsc)")
+        row = self.conn.execute("SELECT * FROM sandbox_payouts WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+        if row:
+            if row["amount_paise"] != int(amount_paise) or row["account_no"] != acct:
+                raise PayoutRejected("sandbox 400 BAD_REQUEST_ERROR: idempotency key reused with a different request")
+            return {"id": row["payout_id"], "status": row["status"], "utr": None, "detail": "simulated (sandbox), replayed for the same key"}
+        pid = "sbx_pout_" + hashlib.sha256(idempotency_key.encode()).hexdigest()[:14]
+        self.conn.execute("INSERT INTO sandbox_payouts VALUES (?,?,?,?,?,?,?)",
+                          (idempotency_key, pid, int(amount_paise), ifsc, acct, "processed", time.time()))
+        return {"id": pid, "status": "processed", "utr": None, "detail": "simulated (sandbox): no money moved"}
+
+    def fetch(self, payout_id):
+        row = self.conn.execute("SELECT * FROM sandbox_payouts WHERE payout_id=?", (payout_id,)).fetchone()
+        if not row:
+            raise PayoutRejected(f"sandbox 404: no payout {payout_id}")
+        return {"id": payout_id, "status": row["status"], "utr": None, "detail": "simulated (sandbox)", "reason": None}
+
+
+def get_provider(conn=None):
+    """RazorpayX test mode when its keys are set; otherwise the clearly labelled local sandbox.
+    PAYDESK_PAYMENTS=razorpayx forces RazorpayX (and fails loudly without keys)."""
+    mode = os.environ.get("PAYDESK_PAYMENTS", "auto").lower()
+    if mode == "razorpayx":
+        return RazorpayXTest()
+    if mode == "sandbox":
+        return LocalSandbox(conn)
+    try:
+        return RazorpayXTest()
+    except ProviderNotConfigured as e:
+        if "LIVE" in str(e):
+            raise
+        return LocalSandbox(conn)

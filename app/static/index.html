@@ -287,7 +287,7 @@ function renderStats() {
     ['03', 'Identity', passed(['identity_confirmed', 'identity_by_gstin']), 'live Crustdata check'],
     ['04', 'Checks', passed(['checks_passed']), 'bank · duplicate · PO clean'],
     ['05', 'Person', waiting, 'waiting for approval', true],
-    ['06', 'Paid once', n(r => r.state === 'PAID'), META.payment_provider ? 'test-mode payouts' : 'payments not connected'],
+    ['06', 'Paid once', n(r => r.state === 'PAID'), META.payments_simulated ? 'simulated payouts (sandbox)' : (META.payment_provider ? 'RazorpayX test mode' : 'payments not connected')],
   ];
   document.getElementById('flow').innerHTML = flow.map(([i, t, c, d, p]) => `<div class="step ${p ? 'person' : ''}"><div class="n">${i}</div><div class="t">${t}</div><div class="c">${c}</div><div class="d">${esc(d)}</div></div>`).join('');
 }
@@ -346,7 +346,7 @@ async function openAudit(id) {
       <div class="src">To ${esc(a.draft.to_email || 'contact on file (none recorded)')} · call back ${esc(a.draft.phone || 'number on file')}
         <div class="note">Recipient comes from the vendor master, never from the message that asked for the change. A person checks and sends it.</div>
         <div class="draft"><b>${esc(a.draft.subject)}</b>\n\n${esc(a.draft.body)}</div></div>` : ''}
-    ${a.payment ? `<p class="label" style="margin-top:24px">Payment · RazorpayX test mode</p><div class="src">Idempotency key <code>${esc(a.payment.idempotency_key)}</code> (saved before the call; a retry reuses it)<br>
+    ${a.payment ? `<p class="label" style="margin-top:24px">Payment · ${a.payment.provider === 'local_sandbox' ? 'LOCAL SANDBOX, SIMULATED: no money moved' : 'RazorpayX test mode'}</p><div class="src">Idempotency key <code>${esc(a.payment.idempotency_key)}</code> (saved before the call; a retry reuses it)<br>
       ${money(a.payment.amount_paise / 100)} to ${esc(a.payment.account_masked)} · ${esc(a.payment.status)}${a.payment.provider_ref ? ' · payout ' + esc(a.payment.provider_ref) : ''}${a.payment.provider_status ? ' · ' + esc(a.payment.provider_status) : ''}${a.payment.utr ? ' · UTR ' + esc(a.payment.utr) : ''}
       ${a.payment.detail ? `<div class="note">${esc(a.payment.detail)}</div>` : ''}</div>` : ''}
     <p class="label" style="margin-top:24px">Sources (${a.sources.length})</p>
@@ -433,11 +433,11 @@ async function load() {
     [ROWS, META] = await Promise.all([fetch('/state').then(r => r.json()), fetch('/meta').then(r => r.json())]);
   } catch { return; }
   document.getElementById('chips').innerHTML = [
-    ['Crustdata live', META.crustdata_key], ['Inbox reader', META.model_key], ['Payouts · test mode', META.payment_provider],
+    ['Crustdata live', META.crustdata_key], ['Inbox reader', META.model_key], [META.payments_simulated ? 'Payouts · sandbox (simulated)' : 'Payouts · RazorpayX test', META.payment_provider],
   ].map(([k, on]) => `<span class="chip ${on ? 'on' : 'off'}">${k}${on ? '' : ' · off'}</span>`).join('');
   const banner = document.getElementById('banner');
   banner.hidden = !META.demo;
-  if (META.demo) document.getElementById('bannerText').textContent = 'Sample vendors and invoices (test data) for a local preview. Crustdata lookups are live. Payouts are off until Razorpay test keys are set.';
+  if (META.demo) document.getElementById('bannerText').textContent = 'Sample vendors and invoices (test data) for a local preview. Crustdata lookups are live. ' + (META.payments_simulated ? 'Payouts are SIMULATED in a local sandbox: no provider, no money moves.' : 'Payouts run in RazorpayX test mode.');
   renderStats(); renderWork(); renderAll();
   if (!document.getElementById('tab-ledger').hidden) renderLedger();
 }

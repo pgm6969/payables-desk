@@ -383,7 +383,7 @@ def sync_payouts(conn=None, provider=None) -> list:
     A payout that ends failed or reversed puts its invoice in PAYOUT_FAILED for a person."""
     conn = conn or connect()
     if provider is None:
-        provider = get_provider()
+        provider = get_provider(conn)
     out = []
     for p in conn.execute("SELECT * FROM payments WHERE provider_ref IS NOT NULL AND (provider_status IS NULL OR provider_status IN ('queued','pending','processing'))").fetchall():
         try:
@@ -418,7 +418,7 @@ def process(run_id: str, conn=None, provider=None, cd=None, vendor_list=None) ->
         cd = Crustdata(conn, run_id, budget=lambda: run["cost_limit"] - _credits_used(conn, run_id))
     if provider is None:
         try:
-            provider = get_provider()
+            provider = get_provider(conn)
         except ProviderNotConfigured as e:
             provider, provider_err = None, str(e)
     deadline = run["started_at"] + run["time_limit_s"]
