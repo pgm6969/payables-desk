@@ -220,6 +220,20 @@ def check_vendor(cd, request: dict) -> dict:
     except SourceUnavailable as e:
         rep.missing.append(f"website check (source unavailable: {e})")
 
+    # 3b. GST registry (services.gst.gov.in), as recorded by the person who looked it up
+    g = request.get("gst_registry") or {}
+    if g:
+        src = "https://services.gst.gov.in/services/searchtp"
+        by = f"recorded by {g.get('checked_by')}" if g.get("checked_by") else "recorded at onboarding"
+        rep.fact("GST registry legal name", g.get("legal_name"), src, f"Legal Name of Business ({by})", g.get("checked_at"))
+        rep.fact("GSTIN status", g.get("status"), src, f"GSTIN / UIN Status ({by})", g.get("checked_at"))
+        if g.get("registration_date"):
+            rep.fact("GST registration date", g.get("registration_date"), src, f"Effective Date of registration ({by})", g.get("checked_at"))
+        if (g.get("status") or "").strip().lower() != "active":
+            rep.flag("red", "gstin_not_active", f"The GST registry shows GSTIN {request.get('gstin')} as '{g.get('status')}', not Active.", src)
+        if g.get("legal_name") and name and not (tokens(g["legal_name"]) & tokens(name)):
+            rep.flag("red", "gst_name_mismatch", f"The GST registry's legal name '{g['legal_name']}' does not match the vendor '{name}'.", src)
+
     # 4. adverse media (5.2)
     cname = b.get("name") or name
     try:
@@ -273,7 +287,7 @@ def check_and_cache(conn, cd, v: dict, force=False) -> dict:
     if not force and (r := cached(conn, v)):
         return r
     rep = check_vendor(cd, {"vendor_id": v.get("vendor_id"), "legal_name": v.get("legal_name"), "domain": v.get("domain"),
-                            "director": v.get("director"), "gstin": v.get("gstin")})
+                            "director": v.get("director"), "gstin": v.get("gstin"), "gst_registry": v.get("gst_registry")})
     conn.execute("INSERT OR REPLACE INTO vendor_checks(vendor_key, report, checked_at) VALUES (?,?,?)",
                  (vendor_key(v), json.dumps(rep), rep["checked_at"]))
     return rep

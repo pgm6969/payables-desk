@@ -64,3 +64,23 @@ def find_vendor(invoice: dict, vendors: list[dict]):
     if len(named) > 1:
         return None, "several vendor records share this name"
     return None, "no vendor record matches this GSTIN, domain or name"
+
+
+def save_vendor(record: dict) -> dict:
+    """Add or update a vendor in the client's vendor master (matched by GSTIN, else domain). Writes atomically."""
+    path = os.environ.get("VENDORS_FILE", DEFAULT_FILE)
+    vendors = load_vendors() if not os.environ.get("TRUST_API_URL") else []
+    g, d = norm_gstin(record.get("gstin")), norm_domain(record.get("domain") or "")
+    for i, v in enumerate(vendors):
+        if (g and norm_gstin(v.get("gstin")) == g) or (d and norm_domain(v.get("domain") or "") == d):
+            record = {**v, **record, "vendor_id": v.get("vendor_id")}
+            vendors[i] = record
+            break
+    else:
+        record.setdefault("vendor_id", "V-" + (g[-6:] if g else d.split(".")[0].upper()[:8]))
+        vendors.append(record)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(vendors, f, indent=2)
+    os.replace(tmp, path)
+    return record

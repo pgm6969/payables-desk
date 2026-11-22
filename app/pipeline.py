@@ -519,3 +519,16 @@ def decide(invoice_id: str, decision: str, by: str, note: str = "", conn=None):
                      (decision, by, time.time(), note, invoice_id))
         log_event(conn, row["run_id"], invoice_id, "decision", {"decision": decision, "by": by, "note": note})
     return decision
+
+
+def recheck(invoice_id: str, by: str, why: str, conn=None):
+    """Run every check again for a bill that ended 'cannot verify' (e.g. after its vendor was onboarded).
+    The earlier reasons stay in the record; the re-check is logged with who asked for it."""
+    conn = conn or connect()
+    with tx(conn):
+        row = conn.execute("SELECT state, run_id FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone()
+        if not row or row["state"] != "CANNOT_VERIFY":
+            raise ValueError("Only a bill that ended 'cannot verify' can be re-checked")
+        _set(conn, invoice_id, "RECEIVED", None, {"code": "rechecked", "text": f"Re-checked by {by}: {why}"})
+        conn.execute("UPDATE runs SET status='running' WHERE run_id=?", (row["run_id"],))
+    return process(row["run_id"], conn)

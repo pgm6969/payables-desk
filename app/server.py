@@ -1,6 +1,7 @@
 """HTTP API + approval page.  uvicorn app.server:app --reload
 On startup it resumes every unfinished run, so a restart picks up where it stopped."""
 import json
+import re
 import threading
 
 from dotenv import load_dotenv
@@ -325,6 +326,61 @@ def vendor_check(body: VendorCheck):
     rep = dict(rep)
     rep["gstin_checks"] = [{"code": c, "text": t} for c, t in checks.gstin_problems(v["gstin"], v["legal_name"])]
     return rep
+
+
+class Onboard(BaseModel):
+    legal_name: str
+    gstin: str
+    domain: str = ""
+    director: str = ""
+    ifsc: str = ""
+    account_no: str = ""
+    gst_legal_name: str = ""
+    gst_status: str = ""
+    gst_registration_date: str = ""
+
+
+@app.post("/vendors/onboard")
+def onboard_vendor(body: Onboard, request: Request):
+    """Add a vendor to the client's vendor master: GSTIN checked locally, the GST registry result recorded
+    with who looked it up, then the live vendor check (5.1 + 5.2). The verdict decides whether it can be paid."""
+    import time as _t
+    from . import checks, trust, vendors as vmod
+    from .crustdata import BudgetExceeded, Crustdata, SourceUnavailable
+    by = auth.approver_label(request.state.user)
+    g = vmod.norm_gstin(body.gstin)
+    probs = checks.gstin_problems(g, body.legal_name)
+    if not g or probs:
+        raise HTTPException(400, probs[0][1] if probs else "A GSTIN is required")
+    rec = {"legal_name": body.legal_name.strip(), "gstin": g, "domain": trust.norm_domain(body.domain),
+           "director": body.director.strip() or None, "onboarded_by": by, "onboarded_at": _t.strftime("%Y-%m-%d %H:%M")}
+    if body.gst_status:
+        rec["gst_registry"] = {"legal_name": body.gst_legal_name.strip(), "status": body.gst_status.strip(),
+                               "registration_date": body.gst_registration_date.strip(), "checked_by": by,
+                               "checked_at": _t.strftime("%Y-%m-%d")}
+    if body.account_no.strip():
+        if not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", body.ifsc.strip().upper()):
+            raise HTTPException(400, "Enter a valid 11-character IFSC with the account number")
+        rec["verified_bank_account"] = {"ifsc": body.ifsc.strip().upper(), "account_no": re.sub(r"\s", "", body.account_no),
+                                        "verified_by": by, "evidence": "entered at onboarding; attach a cancelled cheque to the bill"}
+    conn = connect()
+    saved = vmod.save_vendor(rec)
+    try:
+        with _lock:
+            report = trust.check_and_cache(conn, Crustdata(conn, None, budget=lambda: 12), saved, force=True)
+    except (SourceUnavailable, BudgetExceeded) as e:
+        raise HTTPException(503, f"Saved, but the vendor check could not run: {e}")
+    return {"vendor": {k: v for k, v in saved.items() if k != "verified_bank_account"}, "report": report,
+            "has_verified_account": "verified_bank_account" in saved}
+
+
+@app.post("/invoices/{invoice_id}/recheck")
+def recheck_bill(invoice_id: str, request: Request):
+    try:
+        with _lock:
+            return pipeline.recheck(invoice_id, auth.approver_label(request.state.user), "vendor master or records updated", connect())
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.get("/vendors")

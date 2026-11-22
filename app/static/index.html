@@ -118,6 +118,11 @@
   .dropzone.compact { display:grid; grid-template-columns:1fr auto; align-items:center; text-align:left; padding:16px 20px; margin-bottom:12px; }
   .dropzone.compact .dz-title { font-size:17px; margin:0; } .dropzone.compact .dz-actions { margin:0; }
   .dropzone.compact #scanmsg { grid-column:1 / -1; margin:6px 0 0; }
+  .oform { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px 12px; align-items:end; }
+  .oform > p, .oform > div { grid-column:1 / -1; margin:0; }
+  .oform label { display:flex; flex-direction:column; gap:4px; }
+  .oform input, .oform select { font:inherit; color:var(--ink); background:var(--bone); border:1px solid var(--hair); border-radius:10px; padding:8px 10px; }
+  @media (max-width: 900px) { .oform { grid-template-columns:1fr; } }
   .mail-setup ol.steps { margin:10px 0 14px; padding-left:20px; } .mail-setup code { font-size:12.5px; }
   .mail-head { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
   @media (max-width: 900px) { .clear-hero, .charts, .donut-wrap { grid-template-columns:1fr; } .dropzone.compact { grid-template-columns:1fr; } }
@@ -378,6 +383,21 @@
       <span class="note" id="vmsg">About 4–5 Crustdata credits for a new vendor; a repeat check is free (cached).</span>
     </form>
     <div id="vresult"></div>
+    <h3 class="sub-h">Add a vendor to the vendor master</h3>
+    <form class="card oform" id="oform">
+      <p class="note">Look the GSTIN up on the <a href="https://services.gst.gov.in/services/searchtp" target="_blank" rel="noopener">GST portal</a> (you solve its captcha), then copy what it shows. It is saved as evidence with your name, and the live vendor check runs on save.</p>
+      <label><span class="label">Legal name</span><input name="legal_name" required placeholder="DTDC Express Limited"></label>
+      <label><span class="label">GSTIN</span><input name="gstin" required placeholder="15 characters"></label>
+      <label><span class="label">Website</span><input name="domain" placeholder="dtdc.com"></label>
+      <label><span class="label">Director (optional)</span><input name="director"></label>
+      <label><span class="label">GST portal: legal name</span><input name="gst_legal_name"></label>
+      <label><span class="label">GST portal: status</span><select name="gst_status"><option value="">Not looked up</option><option>Active</option><option>Cancelled</option><option>Suspended</option><option>Inactive</option></select></label>
+      <label><span class="label">GST portal: registration date</span><input name="gst_registration_date" placeholder="01/07/2017"></label>
+      <label><span class="label">Bank IFSC (optional)</span><input name="ifsc"></label>
+      <label><span class="label">Bank account no. (optional)</span><input name="account_no"></label>
+      <div><button class="btn pay" type="submit" id="ogo">Save and check vendor</button> <span class="note" id="omsg"></span></div>
+    </form>
+    <div id="oresult"></div>
     <div class="panel-head" style="margin-top:32px"><h2 style="font-size:20px">Vendor master</h2><span class="muted">The client's vendors, with the verdict the desk pays against.</span></div>
     <div id="vtable"></div>
   </section>
@@ -590,7 +610,7 @@ function renderWork() {
 function renderAll() {
   document.getElementById('alltable').innerHTML = ROWS.length ? `<table><thead><tr><th>Status</th><th>Payee</th><th>Invoice</th><th class="num">Amount</th><th>Latest reason</th><th></th></tr></thead><tbody>` +
     ROWS.map(r => { const [cls, txt] = statusOf(r); const last = r.reasons[r.reasons.length - 1] || {};
-      return `<tr><td><span class="status ${cls}">${esc(txt)}</span></td><td>${esc(r.raw.vendor_name)}</td><td>${esc(r.raw.invoice_no)}<div class="note">${esc(r.raw.invoice_date)}</div></td><td class="num">${money(r.raw.amount)}</td><td>${esc(last.text || '')}</td><td><button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit</button> <a class="btn ghost" href="/invoices/${encodeURIComponent(r.invoice_id)}/doc" target="_blank" rel="noopener">Bill</a></td></tr>`; }).join('') +
+      return `<tr><td><span class="status ${cls}">${esc(txt)}</span></td><td>${esc(r.raw.vendor_name)}</td><td>${esc(r.raw.invoice_no)}<div class="note">${esc(r.raw.invoice_date)}</div></td><td class="num">${money(r.raw.amount)}</td><td>${esc(last.text || '')}</td><td><button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit</button> <a class="btn ghost" href="/invoices/${encodeURIComponent(r.invoice_id)}/doc" target="_blank" rel="noopener">Bill</a>${r.state === 'CANNOT_VERIFY' ? ` <button class="btn small" data-recheck="${esc(r.invoice_id)}">Re-check</button>` : ''}</td></tr>`; }).join('') +
     '</tbody></table>' : '<div class="empty">No invoices yet. Run <code>python -m app.cli inbox &lt;folder&gt;</code> or POST a batch to <code>/runs</code>.</div>';
 }
 
@@ -637,6 +657,12 @@ async function openAudit(id) {
 function closeAudit() { document.getElementById('drawer').classList.remove('open'); document.getElementById('scrim').classList.remove('open'); }
 document.getElementById('scrim').onclick = closeAudit;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAudit(); });
+document.addEventListener('click', async e => {
+  const rc = e.target.closest('[data-recheck]');
+  if (rc) { rc.disabled = true; rc.textContent = 'Re-checking…';
+    const r = await api(`/invoices/${encodeURIComponent(rc.dataset.recheck)}/recheck`, {method: 'POST'});
+    rc.textContent = r.ok ? 'Re-checked' : 'Failed'; load(); return; }
+}, true);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   if (b.dataset.act === 'audit') openAudit(b.dataset.id); else decide(b.dataset.id, b.dataset.act, b);
@@ -754,6 +780,21 @@ const dz = document.getElementById('scanform');
 ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
 ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
 dz.addEventListener('drop', e => uploadBills(e.dataTransfer.files));
+
+// ---- onboard a vendor (GST registry evidence + live vendor check)
+document.getElementById('oform').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const btn = document.getElementById('ogo'), msg = document.getElementById('omsg');
+  btn.disabled = true; msg.textContent = 'Saving and running the vendor check…';
+  try {
+    const r = await api('/vendors/onboard', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(Object.fromEntries(new FormData(ev.target)))});
+    const b = await r.json();
+    if (!r.ok) { msg.textContent = b.detail || 'Could not save'; return; }
+    msg.textContent = `Saved ${b.vendor.legal_name}. Verdict: ${b.report.verdict.replace('_', ' ').toLowerCase()}.` + (b.has_verified_account ? '' : ' No bank account yet, so it cannot be paid.');
+    document.getElementById('oresult').innerHTML = renderVendorReport(b.report);
+    renderVendors();
+  } finally { btn.disabled = false; }
+});
 
 // ---- add a supporting document from the worklist
 document.addEventListener('submit', async ev => {
