@@ -2,6 +2,8 @@
 
 ```mermaid
 flowchart LR
+  INBOX[Accounts inbox<br/>.eml · .pdf · .txt] -->|cli inbox / POST /inbox| READ[Inbox reader<br/>Claude transcribes fields + quotes<br/>flags bank-change emails<br/>cached · ledgered]
+  READ --> REQ
   REQ[Invoice batch + POs + limits] -->|POST /runs or cli run| SUB[submit: run_id = hash of batch]
   SUB --> DB[(SQLite WAL<br/>runs · invoices · sources<br/>approvals · payments · ledger · events)]
   subgraph Pipeline[Resumable pipeline: one transaction per step]

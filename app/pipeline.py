@@ -105,6 +105,10 @@ def step_vendor(conn, inv_id, inv, vendor_list):
             _cannot_verify(conn, inv_id, "no_vendor_record", f"Payee '{inv.get('vendor_name')}': {how}.",
                            missing="a cleared vendor record from Trust & Compliance for this payee")
             return
+        # what the invoice itself says, with the exact quote from the inbox message
+        for ev in inv.get("_evidence", []):
+            _source(conn, inv_id, f"invoice {ev.get('field')}", f"inbox:{inv.get('_message', 'request')}",
+                    ev.get("field", ""), ev.get("quote", ""), None, None)
         sid = _source(conn, inv_id, f"vendor record status = {vendor.get('status')}",
                       "trust-service:vendors/" + str(vendor.get("vendor_id")), "status", vendor.get("status"),
                       vendor.get("verified_at"))
@@ -165,7 +169,7 @@ def step_identity(conn, inv_id, inv, vendor, cd: Crustdata):
               "source_ids": [sid]})
 
 
-def step_checks(conn, inv_id, inv, vendor, pos):
+def step_checks(conn, inv_id, inv, vendor, pos, bank_changes=(), vendor_list=()):
     with tx(conn):
         row = conn.execute("SELECT * FROM invoices WHERE invoice_id=?", (inv_id,)).fetchone()
         verified = vendor.get("verified_bank_account")
@@ -174,6 +178,15 @@ def step_checks(conn, inv_id, inv, vendor, pos):
                            missing="a bank account verified by Trust & Compliance")
             return
         problems = []  # run every check, report every reason (most severe first)
+        # 0. an email asked to change this vendor's bank details: never act on it, re-verify first
+        for bc in bank_changes:
+            v, _ = vendor_mod.find_vendor(bc, vendor_list)
+            if v and str(v.get("vendor_id")) == str(vendor.get("vendor_id")):
+                problems.append(("bank_change_requested",
+                                 f"Message {bc.get('message')} from {bc.get('from') or 'unknown sender'} asks to pay "
+                                 f"{checks.mask_account(bc.get('new_account_no'))} (IFSC {bc.get('new_ifsc')}) instead. "
+                                 f"Bank details are only changed through Trust & Compliance re-verification, never by email."))
+                break
         # 1. bank details must be the verified ones
         inv_acct = inv.get("bank_account")
         if inv_acct and not checks.same_account(inv_acct, verified):
@@ -291,7 +304,7 @@ def process(run_id: str, conn=None, provider=None, cd=None, vendor_list=None) ->
                 elif state == "VENDOR_OK":
                     step_identity(conn, inv_id, inv, vendor, cd)
                 elif state == "IDENTITY_OK":
-                    step_checks(conn, inv_id, inv, vendor, pos)
+                    step_checks(conn, inv_id, inv, vendor, pos, req.get("bank_change_requests", []), vendor_list)
                 elif state == "AWAITING_APPROVAL":
                     if not step_approval(conn, inv_id):
                         break  # waiting for a person

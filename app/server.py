@@ -37,6 +37,18 @@ def create_run(request: dict):
     return {"run_id": run_id}
 
 
+class InboxRequest(BaseModel):
+    folder: str
+
+
+@app.post("/inbox")
+def run_inbox(body: InboxRequest):
+    """Read an inbox folder (emails / PDFs / text) on this machine, then run the batch."""
+    from .cli import run_inbox as _run
+    with _lock:
+        return _run(body.folder, connect())
+
+
 @app.get("/runs/{run_id}")
 def get_run(run_id: str):
     return pipeline.summary(run_id)

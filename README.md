@@ -14,7 +14,19 @@ Today, one firm clears vendors and another pays them. Fraud slips through betwee
 - No invoice is paid to an account that service did not **verify**.
 
 ## Input → finished result
-**Input:** a batch of invoices, the client's purchase orders, and run limits. The format is provisional and will be aligned with the kickoff kit.
+**Input, usually:** the accounts inbox, a folder with one file per message:
+- `.eml` emails, with any PDF attachments
+- `.pdf` invoices
+- `.txt` pasted emails
+- `.json` messages
+- `purchase_orders.json` (optional), holding the client's purchase orders
+
+```bash
+.venv/bin/python -m app.cli inbox path/to/inbox/
+```
+Claude (`claude-opus-5-5`, structured output) only **transcribes** each message: invoice fields, each with the exact quote that states it, plus any "please pay to new bank details" request. It never decides anything. Every pay or hold decision is made by the fixed rules below, so the same invoice gets the same answer however it's worded. A bank-change email is never acted on: every invoice from that vendor is held, and the vendor goes back to Trust & Compliance.
+
+**Input, also:** a JSON batch of invoices, the client's purchase orders and run limits, via `app.cli run`.
 ```json
 { "invoices": [ { "invoice_no": "INV-0042", "vendor_name": "...", "vendor_gstin": "...", "vendor_domain": "...",
                   "amount": "₹18,500", "invoice_date": "2026-10-07", "po_number": "PO-1",
@@ -42,6 +54,7 @@ Every payment waits for a person to **approve** or **reject** it. The person can
 ## Data sources
 | Source | What for | Where |
 |---|---|---|
+| Anthropic Messages API (`claude-opus-5-5`) | Transcribes inbox emails and PDFs into invoice fields, with a quote for each; results cached by message content | `app/inbox.py` |
 | Crustdata `POST /company/identify` | Resolves the invoice's domain to a company and checks it is the cleared vendor (lookalike check) | `app/crustdata.py`, `app/pipeline.py::step_identity` |
 | Trust and compliance vendor records | Vendor status, verified bank account, Crustdata company ID | `app/vendors.py`, [docs/vendor_contract.md](docs/vendor_contract.md) |
 | Client purchase orders (from the request) | Matching invoices to POs | `app/checks.py` |

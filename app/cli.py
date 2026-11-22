@@ -17,10 +17,26 @@ from . import pipeline  # noqa: E402
 from .db import connect  # noqa: E402
 
 
+def run_inbox(folder, conn, client=None, **process_kw):
+    """Read every message in the folder, then submit and process the batch."""
+    import time
+    from . import inbox
+    t0 = time.time()
+    req = inbox.read_inbox(folder, conn, client=client)
+    run_id = pipeline.submit(req, conn)
+    # attribute the model calls made while reading this inbox to the run
+    conn.execute("UPDATE ledger SET run_id=? WHERE run_id IS NULL AND service='model' AND at>=?", (run_id, t0))
+    out = pipeline.process(run_id, conn, **process_kw)
+    out["not_invoices"] = req.get("not_invoices", [])
+    out["bank_change_requests"] = [{k: v for k, v in b.items() if k != "new_account_no"} for b in req.get("bank_change_requests", [])]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(prog="paydesk")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run"); r.add_argument("file")
+    ib = sub.add_parser("inbox"); ib.add_argument("folder")
     sub.add_parser("resume")
     sub.add_parser("queue")
     for name in ("approve", "reject"):
@@ -34,6 +50,8 @@ def main():
             req = json.load(f)
         run_id = pipeline.submit(req, conn)
         print(json.dumps(pipeline.process(run_id, conn), indent=2, ensure_ascii=False))
+    elif a.cmd == "inbox":
+        print(json.dumps(run_inbox(a.folder, conn), indent=2, ensure_ascii=False))
     elif a.cmd == "resume":
         print(json.dumps(pipeline.resume_all(conn), indent=2, ensure_ascii=False))
     elif a.cmd == "queue":
