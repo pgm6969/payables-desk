@@ -125,6 +125,10 @@
   .flag:last-child { border-bottom:0; }
   .flag.red { color:var(--warn); }
   .draft { white-space:pre-wrap; font-size:13px; background:var(--bone); border-radius:10px; padding:12px; margin-top:8px; }
+  .approver { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:14px 20px; margin-bottom:12px; }
+  .approver input { font:inherit; color:var(--ink); background:var(--bone); border:1px solid var(--hair); border-radius:10px; padding:8px 12px; min-width:260px; flex:1; max-width:360px; }
+  .approver input.need { border-color:var(--warn); outline:2px solid var(--warn-bg); }
+  .approver .note.need { color:var(--warn); }
   .how { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
   .card { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px; }
   .card h3 { font-weight:400; font-size:18px; margin:6px 0 8px; }
@@ -179,6 +183,9 @@
 
   <section class="panel" id="tab-work">
     <div class="panel-head"><h2>Waiting for a person</h2><span class="muted" id="workCount"></span></div>
+    <div class="card approver"><label for="approver"><span class="label">Approving as</span></label>
+      <input id="approver" placeholder="Your name (recorded with every decision)" autocomplete="name">
+      <span class="note" id="approverMsg">Your name is saved with each approval or rejection in the audit trail.</span></div>
     <div id="worklist"></div>
   </section>
 
@@ -261,12 +268,31 @@ function reasonList(r, onlyLast) {
     .map(x => { const [l, k] = LABEL[x.code] || [x.code, 'info']; return `<li><span class="code ${k}">${esc(l)}</span><span>${esc(x.text)}${x.missing ? ` <span class="muted">Missing: ${esc(x.missing)}.</span>` : ''}</span></li>`; }).join('') + '</ul>';
 }
 
-async function decide(id, d) {
-  let by = store.get('approver');
-  if (!by) { by = prompt('Your name. It is recorded with the decision.'); if (!by) return; store.set('approver', by); }
-  const r = await fetch(`/invoices/${encodeURIComponent(id)}/${d}`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({by})});
-  if (!r.ok) alert(await r.text());
-  setTimeout(load, 500);
+const approverInput = document.getElementById('approver'), approverMsg = document.getElementById('approverMsg');
+approverInput.value = store.get('approver') || '';
+approverInput.addEventListener('input', () => { store.set('approver', approverInput.value.trim()); approverInput.classList.remove('need'); approverMsg.classList.remove('need'); });
+
+async function decide(id, d, btn) {
+  const by = approverInput.value.trim();
+  if (!by) {  // no pop-ups: embedded browsers block prompt()
+    approverInput.classList.add('need'); approverMsg.classList.add('need');
+    approverMsg.textContent = 'Enter your name here first. It is recorded with the decision.';
+    approverInput.scrollIntoView({block: 'center'}); approverInput.focus();
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = d === 'approve' ? 'Approving…' : 'Rejecting…'; }
+  try {
+    const r = await fetch(`/invoices/${encodeURIComponent(id)}/${d}`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({by})});
+    if (!r.ok) {
+      const b = await r.json().catch(() => ({}));
+      approverMsg.textContent = `Could not ${d}: ${b.detail || r.status}`; approverMsg.classList.add('need');
+    } else {
+      approverMsg.classList.remove('need');
+      approverMsg.textContent = `${d === 'approve' ? 'Approved' : 'Rejected'} by ${by}. ${d === 'approve' ? 'Paying now…' : ''}`;
+    }
+  } finally {
+    setTimeout(load, 700); setTimeout(load, 2000);
+  }
 }
 
 function renderStats() {
@@ -361,7 +387,7 @@ document.getElementById('scrim').onclick = closeAudit;
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAudit(); });
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
-  if (b.dataset.act === 'audit') openAudit(b.dataset.id); else decide(b.dataset.id, b.dataset.act);
+  if (b.dataset.act === 'audit') openAudit(b.dataset.id); else decide(b.dataset.id, b.dataset.act, b);
 });
 
 const VERDICT = {CLEAR: ['paid', 'Clear'], HOLD: ['held', 'Hold'], CANNOT_VERIFY: ['cannot_verify', 'Cannot verify']};
