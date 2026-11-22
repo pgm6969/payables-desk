@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Request, Response  # noqa: E402
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
@@ -15,6 +15,7 @@ from . import auth, pipeline  # noqa: E402
 from .db import connect  # noqa: E402
 
 app = FastAPI(title="Payables Desk")
+auth.ensure_admin()  # creates the admin login on first start (credentials file is git-ignored)
 _lock = threading.Lock()  # one worker at a time over the SQLite state
 OPEN_PATHS = ("/signin", "/auth/", "/healthz")
 
@@ -82,6 +83,41 @@ def auth_local(body: LocalSignup):
     return _start_session({"name": name, "email": email, "provider": "local"})
 
 
+class AdminLogin(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/auth/admin")
+def auth_admin(body: AdminLogin, request: Request):
+    try:
+        user = auth.verify_admin(body.username, body.password, request.client.host if request.client else "local")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+    return _start_session(user)
+
+
+def _require_admin(request: Request):
+    if not auth.is_admin(request.state.user):
+        raise HTTPException(403, "Administrators only")
+
+
+@app.get("/admin/overview")
+def admin_overview(request: Request):
+    """Administrators see who uses the desk, what happened, and the rules in force. Admins cannot edit results."""
+    from . import config
+    _require_admin(request)
+    conn = connect()
+    users = [dict(r) for r in conn.execute("SELECT email, name, provider, created_at, last_login FROM users ORDER BY last_login DESC")] \
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='users'").fetchone() else []
+    events = [dict(r) for r in conn.execute("SELECT run_id, invoice_id, kind, detail, at FROM events ORDER BY event_id DESC LIMIT 60")]
+    decisions = [dict(r) for r in conn.execute(
+        "SELECT a.invoice_id, a.decision, a.decided_by, a.decided_at, a.first_by, i.amount_paise FROM approvals a "
+        "JOIN invoices i USING(invoice_id) WHERE a.decision IS NOT NULL OR a.first_by IS NOT NULL ORDER BY COALESCE(a.decided_at, a.first_at) DESC")]
+    counts = {r["state"]: r["n"] for r in conn.execute("SELECT state, COUNT(*) n FROM invoices GROUP BY state")}
+    return {"users": users, "events": events, "decisions": decisions, "invoice_counts": counts, "rules": config.all_rules()}
+
+
 @app.post("/auth/signout")
 def signout():
     resp = JSONResponse({"ok": True})
@@ -92,7 +128,7 @@ def signout():
 @app.get("/me")
 def me(request: Request):
     u = request.state.user
-    return {"name": u["name"], "email": u["email"], "provider": u["provider"], "label": auth.approver_label(u)}
+    return {"name": u["name"], "email": u["email"], "provider": u["provider"], "role": u.get("role", "user"), "label": auth.approver_label(u)}
 
 
 @app.get("/healthz")
@@ -140,11 +176,18 @@ class Decision(BaseModel):
     note: str = ""
 
 
-@app.post("/invoices/{invoice_id}/{decision}")
+@app.post("/invoices/{invoice_id}/approve")
+def approve(invoice_id: str, request: Request, d: Decision | None = None):
+    return decide(invoice_id, "approve", request, d)
+
+
+@app.post("/invoices/{invoice_id}/reject")
+def reject(invoice_id: str, request: Request, d: Decision | None = None):
+    return decide(invoice_id, "reject", request, d)
+
+
 def decide(invoice_id: str, decision: str, request: Request, d: Decision | None = None):
     """The approver is the signed-in person, never a name typed into the request."""
-    if decision not in ("approve", "reject"):
-        raise HTTPException(404)
     by = auth.approver_label(request.state.user)
     try:
         result = pipeline.decide(invoice_id, "approved" if decision == "approve" else "rejected", by, (d.note if d else ""))
@@ -325,6 +368,31 @@ def invoice_doc(invoice_id: str):
             ("Sender", orig.get("from") or raw.get("_from") or raw.get("vendor_domain"))]
     pdfs = "".join(f'<p><a href="/docs/{e(p["id"])}.pdf" target="_blank" rel="noopener">Open the original PDF: {e(p["name"])}</a></p>'
                    for p in orig.get("pdfs", []))
+    pdfs += "".join(f'<figure><img src="/docs/{e(i["doc"])}" alt="Scanned bill {e(i["name"])}"><figcaption>Scanned image: {e(i["name"])}</figcaption></figure>'
+                    for i in orig.get("images", []))
+    up = orig.get("upload")
+    if up:
+        pdfs = f'<p class="meta">Uploaded by {e(up.get("by"))} as {e(up.get("name"))}, read by {e(up.get("reader") or "the desk")}.</p>' + pdfs
+    from . import scan
+    conn2 = connect()
+    checks_ = scan.checklist(conn2, invoice_id)
+    atts = scan.attachments(conn2, invoice_id)
+    icon = {"pass": "✓", "fail": "✗", "missing": "○", "waiting": "…", "not checked": "–"}
+    checklist_html = "<table class='chk'>" + "".join(
+        f"<tr class='{c['result'].replace(' ', '-')}'><td>{icon.get(c['result'], '–')}</td><td>{e(c['check'])}<div class='meta'>{e(c['detail'])}</div></td><td>{e(c['result'])}</td></tr>"
+        for c in checks_) + "</table>"
+    att_html = ("<ul>" + "".join(f"<li>{e(a['kind_label'])}: <a href='/docs/{e(a['doc'])}' target='_blank' rel='noopener'>{e(a['filename'])}</a>"
+                                 f" <span class='meta'>added by {e(a['uploaded_by'])}</span></li>" for a in atts) + "</ul>") if atts \
+        else "<p class='meta'>No supporting documents yet.</p>"
+    kinds = "".join(f"<option value='{k}'>{e(v)}</option>" for k, v in scan.ATTACH_KINDS.items())
+    attach_form = f"""<form id="att" class="att"><select name="kind" aria-label="Document type">{kinds}</select>
+      <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.eml" aria-label="Document file">
+      <button type="submit">Attach document</button><span id="attmsg" class="meta"></span></form>
+      <script>document.getElementById('att').addEventListener('submit', async ev => {{ ev.preventDefault();
+        const m = document.getElementById('attmsg'); m.textContent = 'Uploading…';
+        const r = await fetch(location.pathname.slice(0, -4) + '/attachments', {{method: 'POST', body: new FormData(ev.target)}});
+        const b = await r.json().catch(() => ({{}}));
+        if (r.ok) location.reload(); else m.textContent = b.detail || 'Upload failed'; }});</script>"""
     original = (f'<h2>Original message</h2><p class="meta">{e(orig.get("subject"))} · received {e(orig.get("date"))}</p>'
                 f'<pre>{e(orig.get("text"))}</pre>{pdfs}') if orig else \
         '<h2>Original message</h2><p class="meta">This bill arrived as structured data, not as an email or PDF, so there is no original document to show.</p>'
@@ -333,6 +401,7 @@ def invoice_doc(invoice_id: str):
             f"{' (simulated: no money moved)' if pay['provider'] == 'local_sandbox' else ''}, status {e(pay['provider_status'] or pay['status'])}, "
             f"to the verified account {e(pay['account_masked'])}.</p>") if pay else ""
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>Bill {e(raw.get('invoice_no'))} · {e(raw.get('vendor_name'))}</title>
 <style>
  :root{{--ink:#14213d;--paper:#fbfcfe;--rule:#d9dee7;--red:#b3261e;--green:#1f6f43;--muted:#5b667a}}
@@ -347,7 +416,11 @@ def invoice_doc(invoice_id: str):
  .stamp.paid,.stamp.ok{{color:var(--green)}} .stamp.bad{{color:var(--red)}}
  .bar{{max-width:760px;margin:16px auto 0;display:flex;gap:8px;justify-content:flex-end}}
  button,a.btn{{font:inherit;border:1px solid var(--ink);background:#fff;color:var(--ink);border-radius:6px;padding:7px 12px;cursor:pointer;text-decoration:none}}
- @media print{{.bar{{display:none}} body{{background:#fff}} .page{{border:0;margin:0}}}}
+ .chk{{margin-top:8px}} .chk td{{padding:8px 6px}} .chk td:first-child{{width:24px;font-weight:700}} .chk td:last-child{{width:90px;color:var(--muted);text-align:right}}
+ .chk tr.pass td:first-child{{color:var(--green)}} .chk tr.fail td:first-child{{color:var(--red)}} .chk tr.missing td:first-child{{color:#a06f00}}
+ figure{{margin:12px 0}} figure img{{max-width:100%;border:1px solid var(--rule);border-radius:6px}} figcaption{{font-size:12px;color:var(--muted)}}
+ form.att{{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}} select,input[type=file]{{font:inherit;font-size:14px}}
+ @media print{{.bar,form.att{{display:none}} body{{background:#fff}} .page{{border:0;margin:0}}}}
  @media (max-width:640px){{.page{{padding:24px 16px}} .stamp{{position:static;display:inline-block;margin-bottom:12px}}}}
 </style></head><body>
 <div class="bar"><a class="btn" href="/">Back to the desk</a><button onclick="print()">Print or save as PDF</button></div>
@@ -357,22 +430,71 @@ def invoice_doc(invoice_id: str):
  <p class="meta">Desk reference {e(invoice_id)}</p>
  <table><tr class="amount"><td>Amount</td><td>₹{(inv['amount_paise'] or 0)/100:,.2f}</td></tr>
  {''.join(f'<tr><td>{e(k)}</td><td>{e(v)}</td></tr>' for k, v in rows)}</table>
+ <h2>Payment verification checklist</h2>{checklist_html}
  <h2>What the desk decided</h2><ul>{why}</ul>{paid}
+ <h2>Supporting documents</h2>{att_html}{attach_form}
  {original}
 </article></body></html>"""
 
 
-@app.get("/docs/{doc_id}.pdf")
-def original_pdf(doc_id: str):
+@app.get("/docs/{name}")
+def original_doc(name: str):
+    """Original bills and supporting documents, by content hash (signed-in users only)."""
+    import os
     import re
     from fastapi.responses import FileResponse
     from .inbox import DOCS_DIR
-    if not re.fullmatch(r"[0-9a-f]{20}", doc_id):
+    m = re.fullmatch(r"([0-9a-f]{20})(\.(pdf|png|jpg|jpeg|webp|txt|eml|json))", name)
+    if not m:
         raise HTTPException(404)
-    path = __import__("os").path.join(DOCS_DIR, doc_id + ".pdf")
-    if not __import__("os").path.exists(path):
+    path = os.path.join(DOCS_DIR, name)
+    if not os.path.exists(path):
         raise HTTPException(404)
-    return FileResponse(path, media_type="application/pdf")
+    media = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(m.group(3), "text/plain")
+    return FileResponse(path, media_type=media)
+
+
+@app.post("/bills/upload")
+async def upload_bills(request: Request, files: list[UploadFile] = File(...)):
+    """Scan or upload bills (photo, PDF, .txt, .eml). Each is read, checked and queued for approval."""
+    from . import scan
+    by = auth.approver_label(request.state.user)
+    payload = [(f.filename or "bill", await f.read()) for f in files]
+    try:
+        with _lock:
+            out = scan.process_upload(payload, by, connect())
+    except scan.UploadRejected as e:
+        raise HTTPException(400, str(e))
+    return out
+
+
+@app.post("/invoices/{invoice_id}/attachments")
+async def add_attachment(invoice_id: str, request: Request, kind: str = Form(...), file: UploadFile = File(...)):
+    """Attach a supporting document (PO, goods receipt, contract, bank proof) to a bill."""
+    from . import scan
+    try:
+        with _lock:
+            conn = connect()
+            att = scan.attach(conn, invoice_id, kind, file.filename or "document", await file.read(),
+                              auth.approver_label(request.state.user))
+    except scan.UploadRejected as e:
+        raise HTTPException(400, str(e))
+    return att
+
+
+@app.get("/invoices/{invoice_id}/attachments")
+def list_attachments(invoice_id: str):
+    from . import scan
+    return scan.attachments(connect(), invoice_id)
+
+
+@app.get("/invoices/{invoice_id}/checklist")
+def bill_checklist(invoice_id: str):
+    from . import scan
+    conn = connect()
+    if not conn.execute("SELECT 1 FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone():
+        raise HTTPException(404)
+    return scan.checklist(conn, invoice_id)
 
 
 @app.get("/invoices/{invoice_id}/letter")

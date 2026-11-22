@@ -39,6 +39,10 @@
   button:disabled { opacity:.6; }
   .note { font-size:12px; color:var(--ash); }
   .err { color:var(--warn); font-size:13px; min-height:18px; }
+  details.admin { margin-top:18px; border-top:1px solid var(--hair); padding-top:14px; }
+  details.admin summary { cursor:pointer; color:var(--ash); font-size:14px; }
+  details.admin form { margin-top:12px; }
+  button.secondary { background:transparent; color:var(--ink); border:1px solid var(--ink); font-weight:600; }
   .notice { font-size:12px; border:1px dashed var(--hair); border-radius:10px; padding:10px 12px; color:var(--ash); margin-bottom:16px; }
   @media (max-width: 860px) { .split { grid-template-columns:1fr; } .left { padding:28px 16px; } .left h1 { font-size:34px; } .proof { grid-template-columns:1fr 1fr 1fr; } }
 </style>
@@ -75,6 +79,14 @@
         </form>
       </div>
       <p class="err" id="err" role="alert"></p>
+      <details class="admin" id="adminbox">
+        <summary>Administrator sign-in</summary>
+        <form id="aform">
+          <label><span class="label">Username</span><input name="username" required autocomplete="username"></label>
+          <label><span class="label">Password</span><input name="password" type="password" required autocomplete="current-password"></label>
+          <button type="submit" id="ago" class="secondary">Sign in as administrator</button>
+        </form>
+      </details>
     </div>
   </section>
 </div>
@@ -87,6 +99,12 @@ async function post(url, body) {
   if (!r.ok) throw new Error(b.detail || 'Sign-in failed');
   return b;
 }
+document.getElementById('aform').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const f = Object.fromEntries(new FormData(ev.target)); const b = document.getElementById('ago');
+  b.disabled = true; err.textContent = '';
+  try { await post('/auth/admin', f); location.href = '/'; } catch (e) { err.textContent = e.message; b.disabled = false; }
+});
 if (CLIENT_ID) {
   document.getElementById('google').hidden = false;
   document.getElementById('title').textContent = 'Sign up with Google';

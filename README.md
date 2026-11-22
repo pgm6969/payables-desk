@@ -13,6 +13,29 @@ Today, one firm clears vendors and another pays them. Fraud slips through betwee
 - No invoice is paid unless the vendor was **cleared** by the Trust and compliance service.
 - No invoice is paid to an account that service did not **verify**.
 
+## Scan a bill, documents and verification
+- **Scan or upload a bill** (the **Scan bill** page, or `POST /bills/upload`): a photo, PDF, `.txt` or `.eml`, dragged in or taken with the phone camera.
+  - **With `ANTHROPIC_API_KEY`:** Claude reads PDFs and photos and quotes each field.
+  - **Without it:** text PDFs are read with pypdf, photos with Tesseract OCR, and then the fixed-pattern reader runs.
+
+  Each bill then goes through every check and lands in the worklist. The original file is kept by content hash. Anything unreadable is reported as unreadable, never guessed.
+- **The bill as a document** (`/invoices/{id}/doc`): printable, with the decision stamped on it. It shows the scanned image or original PDF, who uploaded it and how it was read, and a **payment verification checklist**:
+  - cleared vendor
+  - valid GSTIN
+  - genuine sender
+  - verified bank account
+  - not a duplicate
+  - matches its PO
+  - goods receipt on file
+  - approved by a person
+  - paid once
+- **Supporting documents:** attach a PO, goods receipt or delivery proof, contract, or cancelled cheque to any bill. Each attachment is recorded with who added it, and a goods receipt turns that checklist line green.
+- **Administrator:** one admin login (username and password) sees users, every approval and rejection, recent activity and the rules in force. Admins cannot edit results.
+  - The password is stored only as a salted scrypt hash in `data/admin.json`, which git ignores.
+  - On first start a random password is written to `data/admin_credentials.txt` (git-ignored, owner-only).
+  - Five wrong tries lock the login for 5 minutes.
+  - Rotate the password with `.venv/bin/python scripts/admin_password.py`, or set `ADMIN_USERNAME`/`ADMIN_PASSWORD` before first start.
+
 ## What else it does
 - **Bank-statement posting** (`app/bank.py`, the **Bank lines** page, `python -m app.cli bank lines.json`). Each bank line gets a payee and an account:
   1. The payee comes from the client's vendor master (legal name or a recorded bank descriptor).

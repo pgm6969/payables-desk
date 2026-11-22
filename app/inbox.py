@@ -115,6 +115,9 @@ def _content(msg: dict) -> list:
         blocks.append({"type": "document", "title": name,
                        "source": {"type": "base64", "media_type": "application/pdf",
                                   "data": base64.standard_b64encode(data).decode()}})
+    for name, data, media in msg.get("images", []):
+        blocks.append({"type": "image", "source": {"type": "base64", "media_type": media,
+                                                   "data": base64.standard_b64encode(data).decode()}})
     header = f"From: {msg['from']}\nSubject: {msg['subject']}\nDate: {msg['date']}\n\n{msg['body']}"
     blocks.append({"type": "text", "text": f"<message id=\"{msg['id']}\">\n{header}\n</message>"})
     return blocks
@@ -127,6 +130,8 @@ def _cache_key(msg: dict) -> str:
     for k in ("from", "subject", "date", "body"):
         h.update(str(msg[k]).encode())
     for name, data in msg["pdfs"]:
+        h.update(name.encode()); h.update(data)
+    for name, data, _ in msg.get("images", []):
         h.update(name.encode()); h.update(data)
     return "inbox:" + h.hexdigest()
 
@@ -194,7 +199,7 @@ def extract(msg: dict, conn, run_id=None, client=None) -> dict:
     or a resubmission reads the same answer for free. Without ANTHROPIC_API_KEY,
     text messages are read by fixed patterns (rule_extract); PDFs then cannot be read."""
     if client is None and not os.environ.get("ANTHROPIC_API_KEY"):
-        if msg["pdfs"] and not msg["body"].strip():
+        if (msg["pdfs"] or msg.get("images")) and not msg["body"].strip():
             raise ExtractionRefused(f"{msg['id']} is a PDF; reading PDFs needs the model reader (set ANTHROPIC_API_KEY)")
         conn.execute("INSERT INTO ledger(run_id, service, endpoint, cached, status, at) VALUES (?,?,?,?,?,?)",
                      (run_id, "rules", "inbox.rule_extract", 0, "ok", time.time()))
@@ -251,7 +256,43 @@ def keep_original(msg: dict) -> dict:
         with open(os.path.join(DOCS_DIR, h + ".pdf"), "wb") as f:
             f.write(data)
         pdfs.append({"name": name, "id": h})
-    return {"from": msg["from"], "subject": msg["subject"], "date": msg["date"], "text": (msg["body"] or "")[:20000], "pdfs": pdfs}
+    images = []
+    for name, data, media in msg.get("images", []):
+        os.makedirs(DOCS_DIR, exist_ok=True)
+        h = hashlib.sha256(data).hexdigest()[:20]
+        ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(media, ".png")
+        with open(os.path.join(DOCS_DIR, h + ext), "wb") as f:
+            f.write(data)
+        images.append({"name": name, "doc": h + ext})
+    return {"from": msg["from"], "subject": msg["subject"], "date": msg["date"], "text": (msg["body"] or "")[:20000],
+            "pdfs": pdfs, "images": images}
+
+
+def message_to_records(msg: dict, data: dict) -> dict:
+    """One read message -> invoice records (with original + evidence) and any bank-change request."""
+    dom = sender_domain(msg["from"])
+    original = keep_original(msg)
+    invoices, changes = [], []
+    for inv in data.get("invoices", []):
+        rec = {
+            "invoice_no": inv["invoice_no"], "vendor_name": inv["vendor_name"],
+            "vendor_gstin": inv["vendor_gstin"],
+            # the sending address is evidence too: a lookalike domain is caught by step_identity
+            "vendor_domain": inv["vendor_domain"] or dom,
+            "amount": inv["amount"], "currency": inv["currency"], "invoice_date": inv["invoice_date"],
+            "po_number": inv["po_number"],
+            "_message": msg["id"], "_from": msg["from"],
+            "_original": dict(original),
+            "_evidence": inv["evidence"] + ([{"field": "sender", "quote": msg["from"]}] if msg["from"] else []),
+        }
+        if inv["bank_account_no"]:
+            rec["bank_account"] = {"ifsc": inv["bank_ifsc"], "account_no": inv["bank_account_no"]}
+        invoices.append(rec)
+    bc = data.get("bank_change") or {}
+    if data.get("kind") == "bank_change_request" or bc.get("new_account_no"):
+        changes.append({**bc, "vendor_domain": bc.get("vendor_domain") or dom,
+                        "message": msg["id"], "from": msg["from"], "date": msg["date"]})
+    return {"invoices": invoices, "bank_change_requests": changes}
 
 
 def read_inbox(folder: str, conn, client=None) -> dict:
@@ -269,26 +310,9 @@ def read_inbox(folder: str, conn, client=None) -> dict:
         except ExtractionRefused as e:
             unreadable.append({"message": msg["id"], "why": str(e)})
             continue
-        dom = sender_domain(msg["from"])
-        for inv in data.get("invoices", []):
-            rec = {
-                "invoice_no": inv["invoice_no"], "vendor_name": inv["vendor_name"],
-                "vendor_gstin": inv["vendor_gstin"],
-                # the sending address is evidence too: a lookalike domain is caught by step_identity
-                "vendor_domain": inv["vendor_domain"] or dom,
-                "amount": inv["amount"], "currency": inv["currency"], "invoice_date": inv["invoice_date"],
-                "po_number": inv["po_number"],
-                "_message": msg["id"], "_from": msg["from"],
-                "_original": keep_original(msg),
-                "_evidence": inv["evidence"] + ([{"field": "sender", "quote": msg["from"]}] if msg["from"] else []),
-            }
-            if inv["bank_account_no"]:
-                rec["bank_account"] = {"ifsc": inv["bank_ifsc"], "account_no": inv["bank_account_no"]}
-            invoices.append(rec)
-        bc = data.get("bank_change") or {}
-        if data.get("kind") == "bank_change_request" or bc.get("new_account_no"):
-            changes.append({**bc, "vendor_domain": bc.get("vendor_domain") or dom,
-                            "message": msg["id"], "from": msg["from"], "date": msg["date"]})
+        found = message_to_records(msg, data)
+        invoices += found["invoices"]
+        changes += found["bank_change_requests"]
         if data.get("kind") == "other" and not data.get("invoices"):
             unreadable.append({"message": msg["id"], "why": "no invoice or bank-detail request found"})
     req = {"invoices": invoices, "bank_change_requests": changes, "not_invoices": unreadable}

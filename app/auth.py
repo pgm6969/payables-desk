@@ -89,5 +89,70 @@ def upsert_user(conn, user: dict):
 
 
 def approver_label(user: dict) -> str:
-    tag = "" if user.get("provider") == "google" else " (local account)"
+    tag = {"google": "", "admin": " (administrator)"}.get(user.get("provider"), " (local account)")
     return f"{user['name']} <{user['email']}>{tag}"
+
+
+# ---------------------------------------------------------------- administrator account
+# One admin login (username + password). The password is stored only as a salted scrypt hash in
+# data/admin.json (git-ignored). On first start, if ADMIN_USERNAME/ADMIN_PASSWORD are not set, a random
+# password is generated and written once to data/admin_credentials.txt (git-ignored, owner-only).
+# Rotate it with: .venv/bin/python scripts/admin_password.py
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+ADMIN_FILE = os.path.join(DATA_DIR, "admin.json")
+CRED_FILE = os.path.join(DATA_DIR, "admin_credentials.txt")
+_failures: dict = {}
+
+
+def _hash(password: str, salt: bytes) -> str:
+    return hashlib.scrypt(password.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32).hex()
+
+
+def set_admin(username: str, password: str):
+    salt = secrets.token_bytes(16)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(ADMIN_FILE, "w") as f:
+        json.dump({"username": username, "salt": salt.hex(), "hash": _hash(password, salt), "created_at": int(time.time())}, f)
+    os.chmod(ADMIN_FILE, 0o600)
+
+
+def ensure_admin() -> bool:
+    """Create the admin account if there is none. Returns True if a password was generated."""
+    if os.path.exists(ADMIN_FILE):
+        return False
+    user, pw = os.environ.get("ADMIN_USERNAME", "").strip(), os.environ.get("ADMIN_PASSWORD", "")
+    generated = not pw
+    if generated:
+        user = user or "admin"
+        pw = secrets.token_urlsafe(14)
+    set_admin(user, pw)
+    if generated:
+        with open(CRED_FILE, "w") as f:
+            f.write(f"Payables desk administrator (local only; keep private)\nusername: {user}\npassword: {pw}\n"
+                    f"Rotate with: .venv/bin/python scripts/admin_password.py\n")
+        os.chmod(CRED_FILE, 0o600)
+    return generated
+
+
+def verify_admin(username: str, password: str, client: str = "local") -> dict:
+    """Returns the admin session user or raises ValueError. 5 wrong tries lock the login for 5 minutes."""
+    now = time.time()
+    fails = [t for t in _failures.get(client, []) if now - t < 300]
+    if len(fails) >= 5:
+        raise ValueError("Too many wrong tries. Wait 5 minutes and try again.")
+    try:
+        with open(ADMIN_FILE) as f:
+            rec = json.load(f)
+    except OSError:
+        raise ValueError("No administrator account is set up")
+    ok = hmac.compare_digest(username.strip(), rec["username"]) & hmac.compare_digest(
+        _hash(password, bytes.fromhex(rec["salt"])), rec["hash"])
+    if not ok:
+        _failures[client] = fails + [now]
+        raise ValueError("Wrong username or password")
+    _failures.pop(client, None)
+    return {"name": "Administrator", "email": f"{rec['username']}@admin.local", "provider": "admin", "role": "admin"}
+
+
+def is_admin(user: dict | None) -> bool:
+    return bool(user and user.get("role") == "admin")

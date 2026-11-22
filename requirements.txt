@@ -4,3 +4,6 @@ httpx
 python-dotenv
 pytest
 anthropic
+python-multipart
+pypdf
+# optional: pillow (only for the OCR test)

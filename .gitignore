@@ -10,3 +10,6 @@ data/*.db-*
 data/demo_vendors.json
 data/.session_secret
 data/docs/
+data/admin.json
+data/admin_credentials.txt
+data/demo_pos.json

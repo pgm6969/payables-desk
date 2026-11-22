@@ -72,6 +72,11 @@
   .econ { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
   .econ .card b { display:block; font-weight:400; font-size:30px; margin-top:6px; font-variant-numeric:tabular-nums; }
   .letter { white-space:pre-wrap; font-size:13px; line-height:1.55; }
+  .dropzone { border:2px dashed var(--smoke); text-align:center; padding:36px 20px; transition:border-color .15s, background .15s; }
+  .dropzone.over { border-color:var(--hi); background:var(--hi-soft); }
+  .dz-title { font-size:20px; font-weight:600; margin:0 0 6px; }
+  .dz-actions { display:flex; gap:10px; justify-content:center; margin-top:14px; flex-wrap:wrap; }
+  pre.rules { background:var(--paper); border:1px solid var(--hair); border-radius:10px; padding:14px; font-size:12.5px; overflow:auto; max-height:360px; }
   .passbook { display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; border:1px solid var(--hair); border-radius:14px; background:var(--paper); overflow:hidden;
               background-image:repeating-linear-gradient(transparent 0 31px, var(--mute-bg) 31px 32px); }
   .passbook > div { padding:18px 20px; border-right:1px solid var(--hair); }
@@ -222,6 +227,7 @@
   <div class="side-brand"><span class="mark">₹</span><div><div>Cleared to Pay</div><div class="note">Payables desk</div></div></div>
   <nav class="side-nav" role="tablist">
     <div class="side-group">Work</div>
+    <button role="tab" data-tab="scan" aria-selected="false"><span class="ico">⎙</span>Scan bill</button>
     <button role="tab" data-tab="work" aria-selected="true"><span class="ico">◧</span>Worklist<span class="count" id="navWork"></span></button>
     <button role="tab" data-tab="all" aria-selected="false"><span class="ico">≡</span>All invoices</button>
     <button role="tab" data-tab="bank" aria-selected="false"><span class="ico">⇄</span>Bank lines</button>
@@ -231,6 +237,8 @@
     <button role="tab" data-tab="account" aria-selected="false"><span class="ico">⌂</span>Bank account</button>
     <button role="tab" data-tab="econ" aria-selected="false"><span class="ico">₹</span>Cost &amp; price</button>
     <button role="tab" data-tab="ledger" aria-selected="false"><span class="ico">▤</span>Cost ledger</button>
+    <div class="side-group admin-only" hidden>Admin</div>
+    <button role="tab" data-tab="admin" aria-selected="false" class="admin-only" hidden><span class="ico">⚙</span>Admin</button>
     <div class="side-group">About</div>
     <button role="tab" data-tab="how" aria-selected="false"><span class="ico">?</span>How it decides</button>
   </nav>
@@ -274,6 +282,25 @@
     <div class="card approver"><span class="label">Approving as</span><b id="approverName">…</b>
       <span class="note" id="approverMsg">Every approval or rejection is recorded with your signed-in identity. Payments at or above <span id="twoPerson"></span> need a second, different approver.</span></div>
     <div id="worklist"></div>
+  </section>
+
+  <section class="panel" id="tab-scan" hidden>
+    <div class="panel-head"><h2>Scan or upload a bill</h2><span class="muted">Photo, PDF, text or email. The desk reads it, checks it and puts it in the worklist.</span></div>
+    <form id="scanform" class="card dropzone" aria-label="Upload bills">
+      <input type="file" id="scanfiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.eml,image/*" hidden>
+      <input type="file" id="scancam" name="files" accept="image/*" capture="environment" hidden>
+      <p class="dz-title">Drop bills here</p>
+      <p class="note">PDF, photo (PNG, JPG), .txt or .eml, up to 15 MB each. Photos are read with OCR; with a Claude key, scanned PDFs and photos are read by the model.</p>
+      <div class="dz-actions"><button type="button" class="btn pay" id="pickfiles">Choose files</button>
+        <button type="button" class="btn" id="usecam">Take a photo</button></div>
+      <p class="note" id="scanmsg" role="status"></p>
+    </form>
+    <div id="scanresult"></div>
+  </section>
+
+  <section class="panel" id="tab-admin" hidden>
+    <div class="panel-head"><h2>Admin</h2><span class="muted">Who uses the desk and what they did. Administrators can see everything but cannot edit a result.</span></div>
+    <div id="adminview"></div>
   </section>
 
   <section class="panel" id="tab-all" hidden>
@@ -586,6 +613,59 @@ document.getElementById('bform').addEventListener('submit', async ev => {
   } finally { btn.disabled = false; }
 });
 
+// ---- scan / upload bills
+const scanMsg = document.getElementById('scanmsg');
+async function uploadBills(fileList) {
+  const files = [...fileList]; if (!files.length) return;
+  const fd = new FormData(); files.forEach(f => fd.append('files', f));
+  scanMsg.textContent = `Reading ${files.length} file${files.length > 1 ? 's' : ''} and checking…`;
+  try {
+    const r = await api('/bills/upload', {method: 'POST', body: fd});
+    const b = await r.json();
+    if (!r.ok) { scanMsg.textContent = b.detail || 'Upload failed'; return; }
+    const invs = (b.run && b.run.invoices) || [];
+    scanMsg.textContent = invs.length ? `Read ${invs.length} bill${invs.length > 1 ? 's' : ''}. They are in the worklist now.` : 'No bill could be read from these files.';
+    document.getElementById('scanresult').innerHTML =
+      (invs.length ? `<table><thead><tr><th>Status</th><th>Bill</th><th>Latest reason</th><th></th></tr></thead><tbody>` + invs.map(i => {
+        const row = {state: i.state, outcome: i.outcome}; const [c, t] = statusOf(row); const last = i.reasons[i.reasons.length - 1] || {};
+        return `<tr><td><span class="status ${c}">${esc(t)}</span></td><td>${esc(i.invoice_id)}</td><td>${esc(last.text || '')}</td>
+          <td><a class="btn ghost" href="/invoices/${encodeURIComponent(i.invoice_id)}/doc" target="_blank" rel="noopener">Open bill</a></td></tr>`; }).join('') + '</tbody></table>' : '') +
+      (b.unreadable.length ? `<div class="card" style="margin-top:12px"><span class="label">Could not read</span>${b.unreadable.map(u => `<div class="flag">${esc(u.file)}: ${esc(u.why)}</div>`).join('')}</div>` : '');
+    load();
+  } catch (e) { scanMsg.textContent = 'Upload failed: ' + e.message; }
+}
+document.getElementById('pickfiles').onclick = () => document.getElementById('scanfiles').click();
+document.getElementById('usecam').onclick = () => document.getElementById('scancam').click();
+document.getElementById('scanfiles').onchange = e => uploadBills(e.target.files);
+document.getElementById('scancam').onchange = e => uploadBills(e.target.files);
+const dz = document.getElementById('scanform');
+['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+dz.addEventListener('drop', e => uploadBills(e.dataTransfer.files));
+
+// ---- admin
+async function renderAdmin() {
+  const r = await api('/admin/overview');
+  if (!r.ok) { document.getElementById('adminview').innerHTML = '<div class="empty">Administrators only.</div>'; return; }
+  const d = await r.json(); const when = t => t ? new Date(t * 1000).toLocaleString() : '—';
+  document.getElementById('adminview').innerHTML = `
+    <div class="econ">${Object.entries(d.invoice_counts).map(([k, v]) => `<div class="card"><span class="label">${esc(k.replace(/_/g, ' ').toLowerCase())}</span><b>${v}</b></div>`).join('')}</div>
+    <h3 class="sub-h">People</h3>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Sign-in</th><th>Last seen</th></tr></thead><tbody>
+      ${d.users.map(u => `<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(u.provider)}</td><td>${when(u.last_login)}</td></tr>`).join('')}</tbody></table>
+    <h3 class="sub-h">Approvals and rejections</h3>
+    ${d.decisions.length ? `<table><thead><tr><th>Bill</th><th class="num">Amount</th><th>Decision</th><th>By</th><th>When</th></tr></thead><tbody>
+      ${d.decisions.map(x => `<tr><td><a href="/invoices/${encodeURIComponent(x.invoice_id)}/doc" target="_blank" rel="noopener">${esc(x.invoice_id)}</a></td>
+        <td class="num">${money((x.amount_paise || 0) / 100)}</td><td>${esc(x.decision || 'first approval')}</td>
+        <td>${esc(x.decided_by || x.first_by)}${x.first_by && x.decided_by ? `<div class="note">first: ${esc(x.first_by)}</div>` : ''}</td><td>${when(x.decided_at)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">No decisions yet.</div>'}
+    <h3 class="sub-h">Recent activity</h3>
+    <table><tbody>${d.events.map(e => `<tr><td class="note" style="white-space:nowrap">${when(e.at)}</td><td>${esc(e.kind)}</td><td class="note">${esc(e.invoice_id || e.run_id || '')}</td></tr>`).join('')}</tbody></table>
+    <h3 class="sub-h">Rules in force</h3>
+    <pre class="rules">${esc(JSON.stringify(d.rules, null, 2))}</pre>
+    <p class="note">Change rules in <code>data/rules.json</code>. Rotate the admin password with <code>scripts/admin_password.py</code>.</p>`;
+}
+
 // ---- bank account
 const rupees = n => (n < 0 ? '−' : '') + '₹' + Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 async function renderAccount() {
@@ -629,7 +709,7 @@ async function renderEcon() {
 }
 
 // ---- navigation and shell
-const TITLES = {work: 'Worklist', all: 'All invoices', bank: 'Bank lines', vendors: 'Vendor check', account: 'Bank account', econ: 'Cost & price', ledger: 'Cost ledger', how: 'How it decides'};
+const TITLES = {scan: 'Scan bill', admin: 'Admin', work: 'Worklist', all: 'All invoices', bank: 'Bank lines', vendors: 'Vendor check', account: 'Bank account', econ: 'Cost & price', ledger: 'Cost ledger', how: 'How it decides'};
 function showTab(name) {
   if (!TITLES[name]) name = 'work';
   document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
@@ -643,6 +723,7 @@ function showTab(name) {
   if (name === 'bank') renderBank();
   if (name === 'econ') renderEcon();
   if (name === 'account') renderAccount();
+  if (name === 'admin') renderAdmin();
   if (window.matchMedia('(max-width: 900px)').matches) setMobileNav(false);
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -661,6 +742,7 @@ async function loadMe() {
   ME = await api('/me').then(r => r.json());
   document.getElementById('me').innerHTML = `<b>${esc(ME.name)}</b><span class="note">${esc(ME.email)} · ${ME.provider === 'google' ? 'Google' : 'local account'}</span>`;
   document.getElementById('approverName').textContent = ME.label;
+  document.querySelectorAll('.admin-only').forEach(el => el.hidden = ME.role !== 'admin');
 }
 
 async function load() {
