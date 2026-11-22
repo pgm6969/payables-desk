@@ -72,6 +72,55 @@
   .econ { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
   .econ .card b { display:block; font-weight:400; font-size:30px; margin-top:6px; font-variant-numeric:tabular-nums; }
   .letter { white-space:pre-wrap; font-size:13px; line-height:1.55; }
+  /* chart status colours: validated with the dataviz palette validator (light and dark, in donut order) */
+  :root { --c-paid:#1f6f43; --c-ready:#a87400; --c-cv:#3f5fb0; --c-held:#b3261e; --c-bar:#2c3e6b; --approve:#1f6f43; --reject:#b3261e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --c-paid:#3d9a64; --c-ready:#b98410; --c-cv:#5f7fd0; --c-held:#e0564c; --c-bar:#8ea2d6; --approve:#3d9a64; --reject:#e0564c; } }
+  #tab-clear { position:relative; }
+  .clear-hero { display:grid; grid-template-columns:1.3fr 1fr; gap:16px; align-items:stretch; margin:8px 0 16px; }
+  .clear-title { font-size:34px; font-weight:600; letter-spacing:-.02em; margin:0 0 6px; }
+  .clear-callout { background:var(--hi-soft); border:1px solid var(--hi); border-radius:14px; padding:16px 18px; display:grid; gap:4px; align-content:start; }
+  .clear-callout b { font-size:30px; font-weight:600; }
+  .clear-callout .btn { justify-self:start; margin-top:8px; }
+  .charts { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; margin:16px 0; }
+  figure.chart { margin:0; }
+  figure.chart figcaption { display:flex; flex-direction:column; gap:2px; margin-bottom:12px; }
+  .donut-wrap { display:grid; grid-template-columns:180px 1fr; gap:16px; align-items:center; }
+  .donut-wrap svg { width:180px; height:180px; }
+  .arc { cursor:default; } .arc.paid { stroke:var(--c-paid); } .arc.ready { stroke:var(--c-ready); } .arc.cv { stroke:var(--c-cv); } .arc.held { stroke:var(--c-held); }
+  .arc:hover { stroke-width:30; }
+  .d-num { font-size:30px; font-weight:600; fill:var(--ink); } .d-lab { font-size:12px; fill:var(--ash); }
+  .legend { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  .legend li { display:flex; align-items:center; gap:8px; font-size:14px; } .legend b { margin-left:auto; font-weight:600; }
+  .sw { width:12px; height:12px; border-radius:3px; display:inline-block; flex:none; }
+  .sw.paid { background:var(--c-paid); } .sw.ready { background:var(--c-ready); } .sw.cv { background:var(--c-cv); } .sw.held { background:var(--c-held); }
+  .hbars { display:grid; gap:8px; }
+  .hb { display:grid; grid-template-columns:minmax(120px, 38%) 1fr auto; gap:10px; align-items:center; font-size:13.5px; }
+  .hb-l { display:flex; align-items:center; gap:6px; }
+  .hb-t { height:12px; background:var(--mute-bg); border-radius:0 4px 4px 0; }
+  .hb-f { display:block; height:100%; background:var(--c-bar); border-radius:0 4px 4px 0; min-width:2px; }
+  .hb-f.paid { background:var(--c-paid); } .hb-f.ready { background:var(--c-ready); } .hb-f.cv { background:var(--c-cv); } .hb-f.held { background:var(--c-held); }
+  .hb-v { font-weight:600; min-width:28px; text-align:right; }
+  .hb:hover .hb-t { outline:2px solid var(--hair); }
+  .tip { position:absolute; z-index:8; background:var(--ink); color:var(--bone); font-size:12.5px; padding:6px 9px; border-radius:6px; pointer-events:none; max-width:260px; }
+  .promise.card ol { margin:8px 0 0; padding-left:18px; }
+  .side-nav .nav-hi { font-weight:600; }
+  /* decision buttons say what they do */
+  .btn.approve { background:var(--approve); border-color:var(--approve); color:#fff; font-weight:600; }
+  .btn.approve:hover { filter:brightness(1.08); background:var(--approve); }
+  .btn.approve-risk { background:var(--ok-bg); border-color:var(--approve); color:var(--approve); font-weight:600; }
+  .btn.approve-risk::before { content:"⚠ "; }
+  .btn.reject { background:var(--warn-bg); border-color:var(--reject); color:var(--reject); font-weight:600; }
+  .btn.reject:hover { background:var(--reject); color:#fff; }
+  details.adddoc summary { list-style:none; } details.adddoc summary::-webkit-details-marker { display:none; }
+  .adddoc-f { display:grid; gap:6px; margin-top:8px; font-size:13px; }
+  .adddoc-f select, .adddoc-f input { font:inherit; font-size:13px; max-width:100%; }
+  .dropzone.compact { display:grid; grid-template-columns:1fr auto; align-items:center; text-align:left; padding:16px 20px; margin-bottom:12px; }
+  .dropzone.compact .dz-title { font-size:17px; margin:0; } .dropzone.compact .dz-actions { margin:0; }
+  .dropzone.compact #scanmsg { grid-column:1 / -1; margin:6px 0 0; }
+  .mail-setup ol.steps { margin:10px 0 14px; padding-left:20px; } .mail-setup code { font-size:12.5px; }
+  .mail-head { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  @media (max-width: 900px) { .clear-hero, .charts, .donut-wrap { grid-template-columns:1fr; } .dropzone.compact { grid-template-columns:1fr; } }
   .dropzone { border:2px dashed var(--smoke); text-align:center; padding:36px 20px; transition:border-color .15s, background .15s; }
   .dropzone.over { border-color:var(--hi); background:var(--hi-soft); }
   .dz-title { font-size:20px; font-weight:600; margin:0 0 6px; }
@@ -227,8 +276,9 @@
   <div class="side-brand"><span class="mark">₹</span><div><div>Cleared to Pay</div><div class="note">Payables desk</div></div></div>
   <nav class="side-nav" role="tablist">
     <div class="side-group">Work</div>
-    <button role="tab" data-tab="scan" aria-selected="false"><span class="ico">⎙</span>Scan bill</button>
-    <button role="tab" data-tab="work" aria-selected="true"><span class="ico">◧</span>Worklist<span class="count" id="navWork"></span></button>
+    <button role="tab" data-tab="clear" aria-selected="true" class="nav-hi"><span class="ico">◔</span>Invoice clearance</button>
+    <button role="tab" data-tab="work" aria-selected="false"><span class="ico">◧</span>Worklist<span class="count" id="navWork"></span></button>
+    <button role="tab" data-tab="mail" aria-selected="false"><span class="ico">✉</span>Payment mail</button>
     <button role="tab" data-tab="all" aria-selected="false"><span class="ico">≡</span>All invoices</button>
     <button role="tab" data-tab="bank" aria-selected="false"><span class="ico">⇄</span>Bank lines</button>
     <div class="side-group">Trust</div>
@@ -258,44 +308,52 @@
 </header>
 <div class="banner" id="banner" hidden><div class="wrap" id="bannerText"></div></div>
 <main class="wrap">
-  <div class="hero">
-    <div>
-      <span class="label">Payables desk · Buying and paying × Trust and compliance</span>
-      <h1>Every invoice paid once,<br>only to a verified account.</h1>
-      <p>The desk reads the accounts inbox, matches each invoice to its purchase order, checks the vendor and its bank account against live records, and pays only after a person approves. Anything it cannot prove waits here, with the reason and the source.</p>
-    </div>
-    <div class="promise">
-      <span class="label">Nothing moves until you say yes</span>
-      <ol>
-        <li>No payment to a vendor that Trust &amp; Compliance has not cleared.</li>
-        <li>No payment to an account that was changed by email.</li>
-        <li>No invoice paid twice, even after a crash.</li>
-      </ol>
-    </div>
-  </div>
 
-  <div class="stats" id="stats"></div>
-  <div class="flow" id="flow"></div>
+  <section class="panel" id="tab-clear" hidden>
+    <div class="clear-hero">
+      <div>
+        <h2 class="clear-title">Invoice clearance</h2>
+        <p class="muted">Every invoice paid once, only to a verified account. Nothing moves until a person says yes.</p>
+      </div>
+      <div class="clear-callout" id="clearCallout"></div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="charts">
+      <figure class="chart card" id="donutCard"><figcaption><b>Where every invoice stands</b><span class="note">Share of invoices read</span></figcaption><div id="donut"></div></figure>
+      <figure class="chart card"><figcaption><b>Why invoices are held</b><span class="note">Invoices per reason</span></figcaption><div id="reasons"></div></figure>
+      <figure class="chart card"><figcaption><b>Money by outcome</b><span class="note">Rupees, all invoices read</span></figcaption><div id="money"></div></figure>
+      <figure class="chart card"><figcaption><b>How far invoices got</b><span class="note">Invoices that passed each step</span></figcaption><div id="funnel"></div></figure>
+    </div>
+    <div class="promise card">
+      <b>The desk's three promises</b>
+      <ol><li>No payment to a vendor that Trust &amp; Compliance has not cleared.</li>
+        <li>No payment to an account that was changed by email.</li>
+        <li>No invoice paid twice, even after a crash.</li></ol>
+    </div>
+    <div class="tip" id="tip" role="tooltip" hidden></div>
+  </section>
 
   <section class="panel" id="tab-work">
     <div class="panel-head"><h2>Waiting for a person</h2><span class="muted" id="workCount"></span></div>
+    <form id="scanform" class="card dropzone compact" aria-label="Scan or upload bills">
+      <input type="file" id="scanfiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.eml,image/*" hidden>
+      <input type="file" id="scancam" name="files" accept="image/*" capture="environment" hidden>
+      <div><p class="dz-title">Scan or drop a new bill</p>
+        <p class="note">PDF, photo, .txt or .eml. It is read, checked and added to this list.</p></div>
+      <div class="dz-actions"><button type="button" class="btn pay" id="pickfiles">Upload bill</button>
+        <button type="button" class="btn" id="usecam">Take a photo</button></div>
+      <p class="note" id="scanmsg" role="status"></p>
+    </form>
+    <div id="scanresult"></div>
     <div class="card approver"><span class="label">Approving as</span><b id="approverName">…</b>
       <span class="note" id="approverMsg">Every approval or rejection is recorded with your signed-in identity. Payments at or above <span id="twoPerson"></span> need a second, different approver.</span></div>
     <div id="worklist"></div>
   </section>
 
-  <section class="panel" id="tab-scan" hidden>
-    <div class="panel-head"><h2>Scan or upload a bill</h2><span class="muted">Photo, PDF, text or email. The desk reads it, checks it and puts it in the worklist.</span></div>
-    <form id="scanform" class="card dropzone" aria-label="Upload bills">
-      <input type="file" id="scanfiles" name="files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.eml,image/*" hidden>
-      <input type="file" id="scancam" name="files" accept="image/*" capture="environment" hidden>
-      <p class="dz-title">Drop bills here</p>
-      <p class="note">PDF, photo (PNG, JPG), .txt or .eml, up to 15 MB each. Photos are read with OCR; with a Claude key, scanned PDFs and photos are read by the model.</p>
-      <div class="dz-actions"><button type="button" class="btn pay" id="pickfiles">Choose files</button>
-        <button type="button" class="btn" id="usecam">Take a photo</button></div>
-      <p class="note" id="scanmsg" role="status"></p>
-    </form>
-    <div id="scanresult"></div>
+
+  <section class="panel" id="tab-mail" hidden>
+    <div class="panel-head"><h2>Payment mail</h2><span class="muted">Invoices, bills, payment and bank-detail emails from a connected Google account.</span></div>
+    <div id="mailview"></div>
   </section>
 
   <section class="panel" id="tab-admin" hidden>
@@ -432,27 +490,75 @@ async function decide(id, d, btn) {
   }
 }
 
-function renderStats() {
+// ---- invoice clearance: tiles + charts (status colours validated with the dataviz validator, light and dark)
+const GROUPS = [
+  {key: 'paid', label: 'Paid', cls: 'paid', test: r => r.state === 'PAID'},
+  {key: 'ready', label: 'Ready to pay', cls: 'ready', test: r => r.state === 'AWAITING_APPROVAL' && r.outcome === 'ready' || r.state === 'APPROVED' || r.state === 'PAYING'},
+  {key: 'cv', label: 'Cannot verify', cls: 'cv', test: r => r.state === 'CANNOT_VERIFY'},
+  {key: 'held', label: 'Held or stopped', cls: 'held', test: r => (r.state === 'AWAITING_APPROVAL' && r.outcome !== 'ready') || ['REJECTED', 'PAYOUT_FAILED'].includes(r.state)},
+];
+const inr = p => '₹' + (p / 100).toLocaleString('en-IN', {maximumFractionDigits: 0});
+const tip = () => document.getElementById('tip');
+function showTip(ev, html) { const t = tip(); if (!t) return; t.innerHTML = html; t.hidden = false;
+  const r = document.getElementById('tab-clear').getBoundingClientRect();
+  t.style.left = (ev.clientX - r.left + 14) + 'px'; t.style.top = (ev.clientY - r.top + 14) + 'px'; }
+function hideTip() { const t = tip(); if (t) t.hidden = true; }
+
+function renderStats() { renderClearance(); }
+function renderClearance() {
+  if (!document.getElementById('stats')) return;
   const n = f => ROWS.filter(f).length;
   const codes = c => ROWS.filter(r => r.reasons.some(x => x.code === c)).length;
   const waiting = n(r => r.state === 'AWAITING_APPROVAL');
+  const sum = f => ROWS.filter(f).reduce((a, r) => a + (r.amount_paise || 0), 0);
+  document.getElementById('clearCallout').innerHTML = `<span class="label">Waiting for you</span>
+    <b>${waiting} invoice${waiting === 1 ? '' : 's'}</b><span>${inr(sum(r => r.state === 'AWAITING_APPROVAL'))} to decide on</span>
+    <button class="btn pay" onclick="showTab('work')">Open the worklist</button>`;
   const stats = [
-    ['Waiting for you', waiting, true], ['Paid once', n(r => r.state === 'PAID')],
-    ['Duplicates stopped', codes('possible_duplicate')],
+    ['Paid once', n(r => r.state === 'PAID')], ['Duplicates stopped', codes('possible_duplicate')],
     ['Bank changes blocked', codes('bank_change_requested') + codes('bank_details_changed')],
+    ['Look-alikes caught', codes('lookalike_sender') + codes('lookalike_payee') + codes('domain_unknown')],
     ['Cannot verify', n(r => r.state === 'CANNOT_VERIFY')], ['Invoices read', ROWS.length],
   ];
-  document.getElementById('stats').innerHTML = stats.map(([k, v, act]) => `<div class="stat ${act ? 'act' : ''}"><span class="label">${k}</span><b>${v}</b></div>`).join('');
-  const passed = s => ROWS.filter(r => r.reasons.some(x => s.includes(x.code))).length;
-  const flow = [
-    ['01', 'Read', ROWS.length, 'invoices from the inbox'],
-    ['02', 'Vendor cleared', passed(['vendor_cleared']), 'by Trust & Compliance'],
-    ['03', 'Identity', passed(['identity_confirmed', 'identity_by_gstin']), 'live Crustdata check'],
-    ['04', 'Checks', passed(['checks_passed']), 'bank · duplicate · PO clean'],
-    ['05', 'Person', waiting, 'waiting for approval', true],
-    ['06', 'Paid once', n(r => r.state === 'PAID'), META.payments_simulated ? 'simulated payouts (sandbox)' : (META.payment_provider ? 'RazorpayX test mode' : 'payments not connected')],
-  ];
-  document.getElementById('flow').innerHTML = flow.map(([i, t, c, d, p]) => `<div class="step ${p ? 'person' : ''}"><div class="n">${i}</div><div class="t">${t}</div><div class="c">${c}</div><div class="d">${esc(d)}</div></div>`).join('');
+  document.getElementById('stats').innerHTML = stats.map(([k, v]) => `<div class="stat"><span class="label">${k}</span><b>${v}</b></div>`).join('');
+
+  // donut: share of invoices by outcome (part-to-whole, 4 states)
+  const total = ROWS.length || 1, R = 70, C = 2 * Math.PI * R, gap = 2;
+  let off = 0;
+  const parts = GROUPS.map(g => ({...g, count: n(g.test), amt: sum(g.test)}));
+  const arcs = parts.filter(p => p.count).map(p => {
+    const len = p.count / total * C; const seg = `<circle class="arc ${p.cls}" r="${R}" cx="90" cy="90" fill="none" stroke-width="26"
+      stroke-dasharray="${Math.max(len - gap, 0.5)} ${C}" stroke-dashoffset="${-off}" data-tip="${esc(p.label)}: ${p.count} of ${ROWS.length} (${Math.round(p.count / total * 100)}%)"></circle>`;
+    off += len; return seg; }).join('');
+  document.getElementById('donut').innerHTML = `<div class="donut-wrap"><svg viewBox="0 0 180 180" role="img" aria-label="Invoices by outcome">
+      <g transform="rotate(-90 90 90)">${arcs}</g>
+      <text x="90" y="86" text-anchor="middle" class="d-num">${ROWS.length}</text><text x="90" y="106" text-anchor="middle" class="d-lab">invoices</text></svg>
+    <ul class="legend">${parts.map(p => `<li><span class="sw ${p.cls}"></span>${esc(p.label)}<b>${p.count}</b></li>`).join('')}</ul></div>`;
+
+  // hold reasons: magnitude, one hue, sorted
+  const LAB = r => (LABEL[r] || [r])[0];
+  const reasonCounts = {};
+  ROWS.filter(r => r.state !== 'PAID').forEach(r => r.reasons.forEach(x => { if ((LABEL[x.code] || [])[1] === 'bad') reasonCounts[x.code] = (reasonCounts[x.code] || 0) + 1; }));
+  const rs = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]);
+  const maxR = Math.max(1, ...rs.map(x => x[1]));
+  document.getElementById('reasons').innerHTML = rs.length ? `<div class="hbars">${rs.map(([c, v]) => `<div class="hb" data-tip="${esc(LAB(c))}: ${v} invoice${v > 1 ? 's' : ''}">
+      <span class="hb-l">${esc(LAB(c))}</span><span class="hb-t"><span class="hb-f" style="width:${v / maxR * 100}%"></span></span><span class="hb-v">${v}</span></div>`).join('')}</div>`
+    : '<p class="note">Nothing held right now.</p>';
+
+  // money by outcome
+  const maxM = Math.max(1, ...parts.map(p => p.amt));
+  document.getElementById('money').innerHTML = `<div class="hbars">${parts.map(p => `<div class="hb" data-tip="${esc(p.label)}: ${inr(p.amt)}">
+      <span class="hb-l"><span class="sw ${p.cls}"></span>${esc(p.label)}</span><span class="hb-t"><span class="hb-f ${p.cls}" style="width:${p.amt / maxM * 100}%"></span></span><span class="hb-v">${inr(p.amt)}</span></div>`).join('')}</div>`;
+
+  // funnel: how far invoices got (a real sequence, so numbered)
+  const passed = list => ROWS.filter(r => r.reasons.some(x => list.includes(x.code))).length;
+  const steps = [['1 Read', ROWS.length], ['2 Vendor cleared', passed(['vendor_cleared'])], ['3 Sender confirmed', passed(['identity_confirmed', 'identity_by_gstin'])],
+                 ['4 Checks passed', passed(['checks_passed'])], ['5 Approved', passed(['approved_by_person'])], ['6 Paid once', n(r => r.state === 'PAID')]];
+  document.getElementById('funnel').innerHTML = `<div class="hbars">${steps.map(([k, v]) => `<div class="hb" data-tip="${esc(k.slice(2))}: ${v} of ${ROWS.length}">
+      <span class="hb-l">${esc(k)}</span><span class="hb-t"><span class="hb-f" style="width:${v / Math.max(1, ROWS.length) * 100}%"></span></span><span class="hb-v">${v}</span></div>`).join('')}</div>
+    <p class="note">${META.payments_simulated ? 'Payouts are simulated in a local sandbox.' : ''}</p>`;
+  document.querySelectorAll('#tab-clear [data-tip]').forEach(el => {
+    el.onmousemove = ev => showTip(ev, el.dataset.tip); el.onmouseleave = hideTip; });
 }
 
 function renderWork() {
@@ -466,10 +572,16 @@ function renderWork() {
       <div class="meta">${esc(r.raw.invoice_no)} · ${esc(r.raw.invoice_date)} · PO ${esc(r.raw.po_number || 'none')}${r.raw._message ? ' · from ' + esc(r.raw._message) : ''}</div>
       ${reasonList(r, true)}
     </div><div class="actions">
-      <button class="btn ${r.outcome === 'ready' ? 'pay' : ''}" data-act="approve" data-id="${esc(r.invoice_id)}">${r.outcome === 'ready' ? 'Approve payment' : 'Approve anyway'}</button>
-      <button class="btn" data-act="reject" data-id="${esc(r.invoice_id)}">Reject</button>
+      <button class="btn ${r.outcome === 'ready' ? 'approve' : 'approve-risk'}" data-act="approve" data-id="${esc(r.invoice_id)}">${r.outcome === 'ready' ? 'Approve payment' : 'Approve anyway'}</button>
+      <button class="btn reject" data-act="reject" data-id="${esc(r.invoice_id)}">Reject</button>
       <button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit trail</button>
       <a class="btn ghost" href="/invoices/${encodeURIComponent(r.invoice_id)}/doc" target="_blank" rel="noopener">Open bill</a>
+      <details class="adddoc"><summary class="btn ghost">Add document</summary>
+        <form class="adddoc-f" data-id="${esc(r.invoice_id)}"><select name="kind" aria-label="Document type">
+          <option value="goods_receipt">Goods receipt / delivery proof</option><option value="purchase_order">Purchase order</option>
+          <option value="contract">Contract or rate card</option><option value="bank_proof">Bank proof (cancelled cheque)</option><option value="other">Other</option></select>
+          <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.eml" aria-label="Document file">
+          <button class="btn small" type="submit">Attach</button><span class="note adddoc-m"></span></form></details>
       ${r.outcome === 'ready' ? '' : '<span class="note">Even if approved, the desk will not pay an uncleared vendor or an unverified account.</span>'}
     </div></div>`;
   }).join('') || '<div class="empty">Nothing is waiting for you. New invoices appear here after the checks run.</div>';
@@ -643,6 +755,55 @@ const dz = document.getElementById('scanform');
 ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
 dz.addEventListener('drop', e => uploadBills(e.dataTransfer.files));
 
+// ---- add a supporting document from the worklist
+document.addEventListener('submit', async ev => {
+  const f = ev.target.closest('.adddoc-f'); if (!f) return;
+  ev.preventDefault();
+  const m = f.querySelector('.adddoc-m'); m.textContent = 'Uploading…';
+  const r = await api(`/invoices/${encodeURIComponent(f.dataset.id)}/attachments`, {method: 'POST', body: new FormData(f)});
+  const b = await r.json().catch(() => ({}));
+  m.textContent = r.ok ? `Attached: ${b.filename}` : (b.detail || 'Upload failed');
+});
+
+// ---- payment mail (Gmail, read-only)
+async function renderMail() {
+  const box = document.getElementById('mailview');
+  const st = await api('/gmail/status').then(r => r.json());
+  const reader = META.reader === 'claude' ? 'Claude (reads PDFs and photos too)' : 'fixed patterns + OCR (add ANTHROPIC_API_KEY for Claude)';
+  if (!st.configured) {
+    box.innerHTML = `<div class="card mail-setup"><b>Connect a Google account to see payment mail here</b>
+      <p class="note">The desk asks Google for read-only access (gmail.readonly). It lists only mail that looks like invoices, bills, payments, remittances, bank-detail changes or purchase orders, and reads a message into the desk only when a person clicks it. It can never send, delete or change mail.</p>
+      <ol class="steps"><li>In Google Cloud Console, enable the Gmail API.</li>
+        <li>Create an OAuth client ID of type <b>Web application</b> with redirect URI <code>http://localhost:8000/gmail/callback</code>.</li>
+        <li>Put <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> in <code>payables-desk/.env</code> and restart.</li>
+        <li>Come back here and click <b>Connect Gmail</b>.</li></ol>
+      <button class="btn" disabled>Connect Gmail</button> <span class="note">Not configured on this server yet.</span>
+      <p class="note">Inbox reader: on, using ${esc(reader)}. Until Gmail is connected, upload mail as .eml files from the worklist.</p></div>`;
+    return;
+  }
+  if (!st.connected) {
+    box.innerHTML = `<div class="card mail-setup"><b>Connect your Google account</b>
+      <p class="note">Read-only access. Only payment-related mail is listed: <code>${esc(st.query)}</code></p>
+      <a class="btn pay" href="/gmail/connect">Connect Gmail</a></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="card mail-head">Connected as <b>${esc(st.email || 'your Google account')}</b> · read-only
+     <button class="btn ghost small" id="gdis">Disconnect</button><span class="note" id="gmsg"></span></div><div id="glist" class="note">Loading payment mail…</div>`;
+  document.getElementById('gdis').onclick = async () => { await api('/gmail/disconnect', {method: 'POST'}); renderMail(); };
+  const r = await api('/gmail/messages'); const b = await r.json();
+  if (!r.ok) { document.getElementById('glist').textContent = b.detail || 'Could not load mail'; return; }
+  document.getElementById('glist').innerHTML = b.messages.length ? `<table><thead><tr><th>From</th><th>Subject</th><th>Received</th><th></th></tr></thead><tbody>${
+    b.messages.map(m => `<tr><td>${esc(m.from)}</td><td>${esc(m.subject)}<div class="note">${esc(m.snippet)}</div></td><td class="note">${esc(m.date)}${m.attachments ? `<div>${m.attachments} attachment${m.attachments > 1 ? 's' : ''}</div>` : ''}</td>
+      <td><button class="btn small" data-gimport="${esc(m.id)}">Read into desk</button></td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">No payment-related mail in the last 90 days.</div>';
+  document.querySelectorAll('[data-gimport]').forEach(btn => btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = 'Reading…';
+    const x = await api(`/gmail/import/${btn.dataset.gimport}`, {method: 'POST'}); const y = await x.json();
+    btn.textContent = x.ok ? ((y.run && y.run.invoices.length) ? `Added ${y.run.invoices.length} bill${y.run.invoices.length > 1 ? 's' : ''}` : 'No bill found') : 'Failed';
+    load();
+  });
+}
+
 // ---- admin
 async function renderAdmin() {
   const r = await api('/admin/overview');
@@ -709,14 +870,12 @@ async function renderEcon() {
 }
 
 // ---- navigation and shell
-const TITLES = {scan: 'Scan bill', admin: 'Admin', work: 'Worklist', all: 'All invoices', bank: 'Bank lines', vendors: 'Vendor check', account: 'Bank account', econ: 'Cost & price', ledger: 'Cost ledger', how: 'How it decides'};
+const TITLES = {clear: 'Invoice clearance', mail: 'Payment mail', admin: 'Admin', work: 'Worklist', all: 'All invoices', bank: 'Bank lines', vendors: 'Vendor check', account: 'Bank account', econ: 'Cost & price', ledger: 'Cost ledger', how: 'How it decides'};
 function showTab(name) {
   if (!TITLES[name]) name = 'work';
   document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   Object.keys(TITLES).forEach(t => document.getElementById('tab-' + t).hidden = t !== name);
   document.getElementById('crumb').textContent = TITLES[name];
-  document.querySelector('.hero').hidden = !['work', 'all'].includes(name);
-  document.getElementById('stats').hidden = document.getElementById('flow').hidden = !['work', 'all'].includes(name);
   store.set('tab', name);
   if (name === 'ledger') renderLedger();
   if (name === 'vendors') renderVendors();
@@ -724,6 +883,8 @@ function showTab(name) {
   if (name === 'econ') renderEcon();
   if (name === 'account') renderAccount();
   if (name === 'admin') renderAdmin();
+  if (name === 'mail') renderMail();
+  if (name === 'clear') renderClearance();
   if (window.matchMedia('(max-width: 900px)').matches) setMobileNav(false);
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -753,15 +914,16 @@ async function load() {
   const waiting = ROWS.filter(r => r.state === 'AWAITING_APPROVAL').length;
   document.getElementById('navWork').textContent = waiting || '';
   document.getElementById('chips').innerHTML = [
-    ['Crustdata live', META.crustdata_key], ['Inbox reader', META.model_key], [META.payments_simulated ? 'Payouts · sandbox (simulated)' : 'Payouts · RazorpayX test', META.payment_provider],
+    ['Crustdata live', META.crustdata_key], [META.reader === 'claude' ? 'Inbox reader · Claude' : 'Inbox reader · rules + OCR', true], [META.payments_simulated ? 'Payouts · sandbox (simulated)' : 'Payouts · RazorpayX test', META.payment_provider],
   ].map(([k, on]) => `<span class="chip ${on ? 'on' : 'off'}">${k}${on ? '' : ' · off'}</span>`).join('');
   const banner = document.getElementById('banner');
   banner.hidden = !META.demo;
   if (META.demo) document.getElementById('bannerText').textContent = 'Sample vendors and invoices (test data) for a local preview. Crustdata lookups are live. ' + (META.payments_simulated ? 'Payouts are SIMULATED in a local sandbox: no provider, no money moves.' : 'Payouts run in RazorpayX test mode.');
-  renderStats(); renderWork(); renderAll();
+  renderWork(); renderAll();
+  if (!document.getElementById('tab-clear').hidden) renderClearance();
   if (!document.getElementById('tab-ledger').hidden) renderLedger();
 }
-showTab(store.get('tab') || 'work');
+showTab(store.get('tab') || 'clear');
 loadMe(); load(); setInterval(load, 4000);
 </script>
 </body>

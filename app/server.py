@@ -131,6 +131,68 @@ def me(request: Request):
     return {"name": u["name"], "email": u["email"], "provider": u["provider"], "role": u.get("role", "user"), "label": auth.approver_label(u)}
 
 
+@app.get("/gmail/status")
+def gmail_status():
+    from . import gmail
+    return gmail.status()
+
+
+@app.get("/gmail/connect")
+def gmail_connect(request: Request):
+    from . import gmail
+    if not gmail.configured():
+        raise HTTPException(409, "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET first")
+    return RedirectResponse(gmail.auth_url(str(request.base_url)))
+
+
+@app.get("/gmail/callback")
+def gmail_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    from . import gmail
+    if error:
+        return RedirectResponse("/?gmail=denied")
+    try:
+        gmail.exchange(code, state, str(request.base_url))
+    except (ValueError, httpx_error()) as e:
+        return HTMLResponse(f"<p>Could not connect Gmail: {e}</p><p><a href='/'>Back to the desk</a></p>", status_code=400)
+    return RedirectResponse("/?gmail=connected")
+
+
+def httpx_error():
+    import httpx
+    return httpx.HTTPError
+
+
+@app.get("/gmail/messages")
+def gmail_messages():
+    from . import gmail
+    try:
+        return {"messages": gmail.list_payment_mail(), **gmail.status()}
+    except gmail.NotConnected as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/gmail/import/{msg_id}")
+def gmail_import(msg_id: str, request: Request):
+    """Read one mail (with its attachments) into the desk, like an uploaded .eml."""
+    import re
+    from . import gmail, scan
+    if not re.fullmatch(r"[0-9a-zA-Z]{6,40}", msg_id):
+        raise HTTPException(404)
+    try:
+        raw = gmail.raw_message(msg_id)
+    except gmail.NotConnected as e:
+        raise HTTPException(409, str(e))
+    with _lock:
+        return scan.process_upload([(f"gmail-{msg_id}.eml", raw)], auth.approver_label(request.state.user), connect())
+
+
+@app.post("/gmail/disconnect")
+def gmail_disconnect():
+    from . import gmail
+    gmail.disconnect()
+    return {"ok": True}
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
@@ -547,17 +609,18 @@ def meta():
             "two_person_threshold_inr": config.get("two_person_threshold_inr"),
             "payments_simulated": mode == "local_sandbox",
             "model_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+            "reader": "claude" if os.environ.get("ANTHROPIC_API_KEY") else "rules + ocr",
             "crustdata_key": bool(os.environ.get("CRUSTDATA_API_KEY"))}
 
 
 @app.get("/state")
 def state():
     conn = connect()
-    rows = conn.execute("SELECT i.invoice_id, i.raw, i.state, i.outcome, i.reasons, i.updated_at, p.provider_status, p.provider_ref "
+    rows = conn.execute("SELECT i.invoice_id, i.raw, i.state, i.outcome, i.reasons, i.updated_at, i.amount_paise, p.provider_status, p.provider_ref "
                         "FROM invoices i LEFT JOIN payments p ON p.invoice_id=i.invoice_id ORDER BY i.rowid DESC LIMIT 200").fetchall()
     return [{"invoice_id": r["invoice_id"], "raw": {k: v for k, v in json.loads(r["raw"]).items() if k not in ("bank_account", "_original", "_evidence")},
              "state": r["state"], "outcome": r["outcome"], "updated_at": r["updated_at"],
-             "payout_status": r["provider_status"], "payout_id": r["provider_ref"],
+             "payout_status": r["provider_status"], "payout_id": r["provider_ref"], "amount_paise": r["amount_paise"],
              "reasons": json.loads(r["reasons"])} for r in rows]
 
 

@@ -13,6 +13,22 @@ Today, one firm clears vendors and another pays them. Fraud slips through betwee
 - No invoice is paid unless the vendor was **cleared** by the Trust and compliance service.
 - No invoice is paid to an account that service did not **verify**.
 
+## Invoice clearance overview and payment mail
+- **Invoice clearance** (first page under Work):
+  - a "waiting for you" callout with the rupee total to decide on
+  - tiles: paid once, duplicates stopped, bank changes blocked, look-alikes caught, cannot verify, invoices read
+  - four charts with hover tooltips: where every invoice stands (donut), why invoices are held, money by outcome, and how far invoices got through the six steps
+
+  The status colours were checked with a palette validator for colour-blind separation and contrast, in light and dark mode. Every chart also has a legend and value labels, so no chart relies on colour alone.
+- **Worklist:** a scan or upload bar sits at the top, and every bill has **Add document**. **Approve payment** is green, **Approve anyway** (a held item) is green with a warning, and **Reject** is red.
+- **Payment mail (Gmail, read-only):**
+  1. Connect a Google account with `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. That's a Web OAuth client with redirect URI `http://localhost:8000/gmail/callback`, and the scope is `gmail.readonly`.
+  2. The desk lists only payment-related mail (invoices, bills, payments, remittances, bank-detail changes, purchase orders, GSTIN). The search query is `gmail_query` in the rules file.
+  3. **Read into desk** pulls one message, attachments included, through the same reader and checks as an upload.
+
+  The refresh token is kept in `data/gmail_token.json` (git-ignored, owner-only). Disconnecting revokes it at Google and deletes the file.
+- **Inbox reader:** always on. It uses fixed patterns plus OCR, and Claude when `ANTHROPIC_API_KEY` is set.
+
 ## Scan a bill, documents and verification
 - **Scan or upload a bill** (the **Scan bill** page, or `POST /bills/upload`): a photo, PDF, `.txt` or `.eml`, dragged in or taken with the phone camera.
   - **With `ANTHROPIC_API_KEY`:** Claude reads PDFs and photos and quotes each field.
