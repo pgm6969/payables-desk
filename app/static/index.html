@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payables Desk</title>
+<style>
+  /* Tokens after the Ramp style on styles.refero.design: monochrome + one highlighter for money actions */
+  :root { --ink:#0c0a08; --obsidian:#1a1919; --ash:#6d6c6b; --smoke:#d3d3d3; --hair:#e5e7eb; --bone:#f4f2f0; --paper:#fff; --hi:#e4f222; --warn:#b42318; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bone); color:var(--ink); font:400 15px/1.5 Inter, "IBM Plex Sans", system-ui, sans-serif; }
+  main { max-width:1200px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-weight:400; font-size:40px; line-height:1.05; margin:0 0 4px; }
+  .sub { color:var(--ash); margin:0 0 32px; }
+  .label { font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--ash); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:32px; }
+  .stat { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px; }
+  .stat b { display:block; font-weight:400; font-size:28px; }
+  .card { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px 24px; margin-bottom:12px; }
+  .row { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+  .tag { display:inline-block; border:1px solid var(--hair); border-radius:6px; padding:2px 8px; font-size:12px; }
+  .tag.ready { background:var(--hi); border-color:var(--hi); }
+  .tag.held, .tag.cannot_verify { border-color:var(--warn); color:var(--warn); }
+  .tag.paid { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  ul { margin:8px 0 0; padding-left:18px; color:var(--ash); }
+  button { font:inherit; border-radius:6px; padding:8px 14px; border:1px solid var(--ink); background:var(--paper); cursor:pointer; }
+  button.pay { background:var(--hi); border-color:var(--hi); }
+  a { color:var(--ink); }
+  .amt { font-size:20px; }
+</style>
+</head>
+<body>
+<main>
+  <p class="label">Cleared to Pay · Buying and paying</p>
+  <h1>Payables desk</h1>
+  <p class="sub">Each invoice paid once, only to a cleared vendor's verified account. Anything unproven waits for a person.</p>
+  <div class="grid" id="stats"></div>
+  <p class="label">Invoices</p>
+  <div id="list"></div>
+</main>
+<script>
+const who = () => { try { return localStorage.getItem('approver') || prompt('Your name (recorded with the decision)') } catch { return prompt('Your name') } };
+async function decide(id, d) {
+  const by = who(); if (!by) return;
+  try { localStorage.setItem('approver', by) } catch {}
+  const r = await fetch(`/invoices/${encodeURIComponent(id)}/${d}`, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({by})});
+  if (!r.ok) alert(await r.text());
+  setTimeout(load, 600);
+}
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+async function load() {
+  const [rows, ledger] = await Promise.all([fetch('/state').then(r=>r.json()), fetch('/ledger').then(r=>r.json())]);
+  const count = k => rows.filter(r => (r.outcome||'') === k).length;
+  const credits = ledger.reduce((s,l)=>s+(l.credits||0),0);
+  document.getElementById('stats').innerHTML = [
+    ['Paid', count('paid')], ['Waiting for a person', rows.filter(r=>r.state==='AWAITING_APPROVAL').length],
+    ['Cannot verify', count('cannot_verify')], ['Crustdata credits', credits.toFixed(2)]
+  ].map(([k,v]) => `<div class="stat"><span class="label">${k}</span><b>${v}</b></div>`).join('');
+  document.getElementById('list').innerHTML = rows.map(r => {
+    const waiting = r.state === 'AWAITING_APPROVAL';
+    const o = r.outcome || r.state.toLowerCase();
+    return `<div class="card"><div class="row">
+      <div><span class="tag ${esc(o)}">${esc(o.replace('_',' '))}</span>
+        <div class="amt">${esc(r.raw.vendor_name)} · ₹${esc(r.raw.amount)}</div>
+        <span class="label">${esc(r.raw.invoice_no)} · ${esc(r.raw.invoice_date)} · <a href="/invoices/${encodeURIComponent(r.invoice_id)}/audit" target="_blank">audit trail</a></span>
+        <ul>${r.reasons.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul></div>
+      ${waiting ? `<div><button class="pay" onclick="decide('${esc(r.invoice_id)}','approve')">Approve payment</button>
+                     <button onclick="decide('${esc(r.invoice_id)}','reject')">Reject</button></div>` : ''}
+    </div></div>`;
+  }).join('') || '<div class="card">No invoices yet. POST a batch to /runs.</div>';
+}
+load(); setInterval(load, 3000);
+</script>
+</body>
+</html>
