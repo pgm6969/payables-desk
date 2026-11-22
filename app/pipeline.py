@@ -115,7 +115,9 @@ def step_vendor(conn, inv_id, inv, vendor_list, cd=None):
     vendor = trust.effective(conn, vendor)
     with tx(conn):
         if not vendor:
-            _cannot_verify(conn, inv_id, "no_vendor_record", f"Payee '{inv.get('vendor_name')}': {how}.",
+            _cannot_verify(conn, inv_id, "no_vendor_record",
+                           f"Payee '{inv.get('vendor_name') or 'unknown'}'" + (f" (GSTIN {inv.get('vendor_gstin')})" if inv.get("vendor_gstin") else "") +
+                           f": {how}. This vendor is not onboarded: run a vendor check, then add it to the vendor master with a verified bank account.",
                            missing="a cleared vendor record from Trust & Compliance for this payee")
             return
         # what the invoice itself says, with the exact quote from the inbox message

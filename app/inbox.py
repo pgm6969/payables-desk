@@ -138,14 +138,81 @@ def _cache_key(msg: dict) -> str:
 
 _RX = {
     "invoice_no": r"invoice\s*(?:no\.?|number|#)\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-_.]{1,30})",
-    "amount": r"(?:grand\s+total|total\s+(?:amount\s+)?(?:payable|due)|amount\s+(?:due|payable)|net\s+payable|invoice\s+value|total)\s*[:\-]?\s*((?:₹|rs\.?|inr)?\s*[\d,]+(?:\.\d{1,2})?)",
-    "invoice_date": r"(?:invoice\s+)?date\s*[:\-]?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[/\- ](?:\d{1,2}|[A-Za-z]{3,9})[/\- ]\d{2,4})",
+    "invoice_date": r"(?:invoice\s+)?date\s*[:\-]?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[/\-. ](?:\d{1,2}|[A-Za-z]{3,9})[/\-. ]\d{2,4})",
     "vendor_gstin": r"\b(\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z])\b",
     "po_number": r"(?:p\.?\s?o\.?|purchase\s+order)\s*(?:no\.?|number|#)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9/\-]{2,30})",
     "bank_ifsc": r"\b([A-Z]{4}0[A-Z0-9]{6})\b",
-    "bank_account_no": r"(?:a/?c|account)\s*(?:no\.?|number)?\s*[:\-]?\s*(\d{6,18})",
+    "bank_account_no": r"\b(?:a/c|ac|account)\b\.?\s*(?:no\.?|number)?\s*[:\-]?\s*(\d{6,18})",
 }
 _BANK_CHANGE = re.compile(r"(chang(e|ed|ing)|new|update[d]?|switch(ed)?)\s+(of\s+|our\s+|to\s+)?(the\s+)?bank|bank\s+(account\s+)?details\s+(have\s+)?changed|new\s+account\s+details", re.I)
+
+
+# Amount labels, strongest first. PDF text often puts the number BEFORE its label ("935.00 Total invoice Value"),
+# so each label is tried with the number on either side. A bare "Total" (often a table subtotal) is the last resort.
+_AMOUNT_LABELS = [r"total\s+invoice\s+value", r"grand\s+total", r"(?:total\s+)?amount\s+payable", r"net\s+payable",
+                  r"total\s+amount(?:\s+due)?", r"amount\s+due", r"invoice\s+value", r"invoice\s+amount", r"total"]
+_MONEY = r"((?:₹|rs\.?|inr)?\s*\d[\d,]*(?:\.\d{1,2})?)"
+_NUM_WORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+                                         "fifteen sixteen seventeen eighteen nineteen".split())}
+_NUM_WORDS.update({w: 10 * (i + 2) for i, w in enumerate("twenty thirty forty fifty sixty seventy eighty ninety".split())})
+_SCALES = {"hundred": 100, "thousand": 1000, "lakh": 100000, "lakhs": 100000, "lac": 100000, "crore": 10000000, "crores": 10000000}
+
+
+def words_to_rupees(text: str):
+    """'NINE HUNDRED THIRTY FIVE RUPEES ONLY' -> 935 (Indian numbering). None if it cannot parse."""
+    words = re.findall(r"[a-z]+", (text or "").lower().split("rupees")[0])
+    total, cur, seen = 0, 0, False
+    for w in words:
+        if w in _NUM_WORDS:
+            cur += _NUM_WORDS[w]; seen = True
+        elif w == "hundred":
+            cur *= 100
+        elif w in _SCALES:
+            total += cur * _SCALES[w]; cur = 0
+        elif w in ("and", "only", "amount", "in", "inr", "rs"):
+            continue
+    return total + cur if seen else None
+
+
+def find_amount(lines):
+    """Returns (amount_text, line) using the strongest label found, checked against 'amount in words' when present."""
+    words_line = next((l for l in lines if re.search(r"amount\s+in\s+words|rupees.*only", l, re.I)), None)
+    in_words = words_to_rupees(words_line.split(":", 1)[-1]) if words_line else None
+    candidates = []
+    for rank, label in enumerate(_AMOUNT_LABELS):
+        for l in lines:
+            for rx in (rf"{label}\s*[:\-]?\s*{_MONEY}\s*$", rf"{label}\s*[:\-]?\s*{_MONEY}\b", rf"^\s*{_MONEY}\s+{label}\b"):
+                m = re.search(rx, l, re.I)
+                if m:
+                    candidates.append((rank, m.group(1).strip(), l))
+                    break
+    if in_words is not None:
+        for rank, amt, l in sorted(candidates):
+            try:
+                if abs(float(re.sub(r"[^\d.]", "", re.sub(r"(?i)(rs|inr)\.?", "", amt)).strip(".")) - in_words) < 1:
+                    return amt, l, words_line
+            except ValueError:
+                pass
+    if candidates:
+        rank, amt, l = sorted(candidates)[0]
+        return amt, l, None
+    return "", None, None
+
+
+_COMPANY = re.compile(r"\b(private\s+limited|pvt\.?\s*ltd\.?|limited|ltd\.?|llp)\s*$", re.I)
+
+
+def find_issuer(lines):
+    """The business that issued the bill: a company-name line before the bill-to block, preferring one near a GSTIN/CIN."""
+    stop = next((i for i, l in enumerate(lines) if re.match(r"^(bill\s*to|billed\s*to|to|customer|ship\s*to|buyer)\b\s*[:\-]?", l, re.I)), len(lines))
+    ids = [i for i, l in enumerate(lines[:stop]) if re.search(r"\b(gstin|cin|pan)\b", l, re.I)]
+    best = None
+    for i, l in enumerate(lines[:stop]):
+        if _COMPANY.search(l) and len(l) <= 80 and not re.search(r"address|signed|registered|:\s", l, re.I):
+            dist = min((abs(i - j) for j in ids), default=99)
+            if best is None or dist < best[0]:
+                best = (dist, l)
+    return (best[1].strip(), best[1]) if best else ("", None)
 
 
 def rule_extract(msg: dict) -> dict:
@@ -162,6 +229,19 @@ def rule_extract(msg: dict) -> dict:
                 inv[field] = m.group(1).strip().rstrip(".")
                 ev.append({"field": field, "quote": l[:200]})
                 break
+    amt, amt_line, words_line = find_amount(lines)
+    if amt:
+        inv["amount"] = amt
+        ev.append({"field": "amount", "quote": amt_line[:200]})
+        if words_line:
+            ev.append({"field": "amount (in words, agrees)", "quote": words_line[:200]})
+    if not inv["vendor_domain"]:
+        for l in lines:
+            m = re.search(r"\b(?:www\.)([a-z0-9][a-z0-9\-]+\.[a-z.]{2,10})\b", l, re.I)
+            if m:
+                inv["vendor_domain"] = m.group(1).lower()
+                ev.append({"field": "vendor_domain", "quote": l[:200]})
+                break
     for l in lines:
         m = re.match(r"^(?:from|vendor|supplier|billed\s+by|seller)\s*[:\-]\s*(.+)$", l, re.I)
         name = re.sub(r"<.*?>", "", m.group(1)).strip().strip('"') if m else ""
@@ -169,6 +249,11 @@ def rule_extract(msg: dict) -> dict:
             inv["vendor_name"] = name
             ev.append({"field": "vendor_name", "quote": l[:200]})
             break
+    if not inv["vendor_name"]:
+        name, line = find_issuer(lines)
+        if name:
+            inv["vendor_name"] = name
+            ev.append({"field": "vendor_name", "quote": line[:200]})
     if not inv["vendor_name"] and msg.get("from"):
         inv["vendor_name"] = re.sub(r"\s*<.*?>\s*", "", msg["from"]).strip().strip('"')
     if inv["amount"]:

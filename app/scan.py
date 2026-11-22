@@ -89,6 +89,13 @@ def process_upload(files: list[tuple[str, bytes]], uploaded_by: str, conn=None, 
     invoices, changes, unreadable, docs = [], [], [], []
     for filename, data in files:
         doc_id, ext = save_file(data, filename)
+        earlier = conn.execute(
+            "SELECT invoice_id, state FROM invoices WHERE json_extract(raw, '$._original.upload.doc') = ? ORDER BY rowid DESC LIMIT 1",
+            (doc_id + ext,)).fetchone()
+        if earlier and earlier["state"] not in ("CANNOT_VERIFY", "REJECTED", "PAYOUT_FAILED"):
+            unreadable.append({"file": filename, "doc": f"{doc_id}{ext}", "duplicate_of": earlier["invoice_id"],
+                               "why": f"this exact file was already uploaded as bill {earlier['invoice_id']} ({earlier['state'].lower().replace('_', ' ')}); not added again"})
+            continue
         msg = to_message(data, filename, doc_id, ext)
         has_model = client is not None or bool(os.environ.get("ANTHROPIC_API_KEY"))
         if not has_model and not (msg["body"] or "").strip():

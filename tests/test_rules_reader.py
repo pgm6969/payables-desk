@@ -55,3 +55,34 @@ def test_inbox_without_model_key_end_to_end():
     out = run_inbox(folder, connect(), provider=FakePay(), cd=FakeCD(), vendor_list=VENDORS)
     assert len(out["invoices"]) == 1
     assert out["invoices"][0]["reasons"][-1]["code"] in ("bank_change_requested",)
+
+
+PDF_ORDER = """0.00 Peak Surcharge
+   www.examplecourier.com
+GSTIN: 27AAACB0446L1ZS
+CIN: U85110KA1990PLC011089
+Example Courier Express Limited
+Amount in words:NINE HUNDRED THIRTY FIVE RUPEES ONLY
+ SAC No 996812
+   935.00 Total invoice Value
+ Taxable Value 792.38
+ Invoice Amount    767.38
+ Invoice Date 25.07.2026
+ Invoice No. HR0627WI012747
+TO:
+Some Customer Private Limited
+Total 5.50 792.38
+"""
+
+
+def test_pdf_text_order_amount_words_dotted_date_and_issuer():
+    i = inbox.rule_extract({"subject": "", "body": PDF_ORDER, "from": "", "pdfs": []})["invoices"][0]
+    assert i["amount"] == "935.00"                   # label after the number; agrees with the amount in words
+    assert i["invoice_date"] == "2026-07-25"         # dotted date
+    assert i["vendor_name"] == "Example Courier Express Limited"   # issuer, not the bill-to customer
+    assert i["vendor_domain"] == "examplecourier.com"
+    assert i["bank_account_no"] == ""                # 'SAC No' is not 'A/C No'
+
+
+def test_words_to_rupees_indian_scale():
+    assert inbox.words_to_rupees("ONE LAKH TWENTY THREE THOUSAND FOUR HUNDRED FIVE RUPEES ONLY") == 123405

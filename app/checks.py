@@ -25,7 +25,7 @@ def norm_date(s) -> str | None:
     if not s:
         return None
     s = str(s).strip()
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d %b %Y", "%d %B %Y"):
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y", "%d-%b-%Y", "%d %b %Y", "%d %B %Y", "%d/%m/%y", "%d.%m.%y"):
         try:
             from datetime import datetime
             return datetime.strptime(s, fmt).date().isoformat()
