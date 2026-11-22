@@ -4,27 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · Cleared to Pay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --ink:#0c0a08; --ash:#6d6c6b; --hair:#e5e7eb; --bone:#f4f2f0; --paper:#ffffff; --hi:#e4f222; --warn:#b42318; --panel:#0c0a08; --panel-ink:#f4f2f0; }
+  :root { --ink:#14213d; --ash:#5b667a; --hair:#d6dce5; --bone:#f6f7f9; --paper:#ffffff; --hi:#d99a00; --warn:#b3261e; --panel:#14213d; --panel-ink:#eef1f6; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-    --ink:#f4f2f0; --ash:#a3a19e; --hair:#2b2a29; --bone:#0f0e0d; --paper:#181716; --warn:#f97066; --panel:#181716; } }
+    --ink:#e8ecf4; --ash:#9aa6bc; --hair:#253049; --bone:#0e1424; --paper:#151d30; --warn:#f2867d; --panel:#0a0f1c; --hi:#f0b429; } }
   * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; background:var(--bone); color:var(--ink); font:400 15px/1.5 Inter, "IBM Plex Sans", system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
+  html, body { margin:0; height:100%; background:var(--bone); color:var(--ink); font:400 15px/1.55 "Instrument Sans", system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
   .split { display:grid; grid-template-columns:1.1fr 1fr; min-height:100vh; }
   .left { background:var(--panel); color:var(--panel-ink); padding:48px; display:flex; flex-direction:column; justify-content:space-between; gap:32px; }
   .brand { display:flex; gap:10px; align-items:center; font-size:16px; }
-  .mark { width:24px; height:24px; border-radius:6px; background:var(--hi); color:#0c0a08; display:grid; place-items:center; font-size:13px; }
-  .left h1 { font-weight:400; font-size:48px; line-height:1.02; letter-spacing:-.01em; margin:0 0 16px; max-width:14ch; }
-  .left h1 em { font-style:normal; background:linear-gradient(transparent 60%, rgba(228,242,34,.45) 60%); }
-  .left p { color:#b8b6b3; max-width:46ch; margin:0; }
-  .proof { display:grid; grid-template-columns:repeat(3, 1fr); gap:1px; background:#2b2a29; border:1px solid #2b2a29; border-radius:14px; overflow:hidden; }
+  .mark { width:24px; height:24px; border-radius:6px; background:var(--hi); color:#14213d; display:grid; place-items:center; font-size:13px; }
+  .left h1 { font-weight:600; font-size:46px; line-height:1.02; letter-spacing:-.01em; margin:0 0 16px; max-width:14ch; }
+  .left p { color:#b9c3d6; max-width:46ch; margin:0; }
+  .proof { display:grid; grid-template-columns:repeat(3, 1fr); gap:1px; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.14); border-radius:14px; overflow:hidden; }
   .proof div { background:var(--panel); padding:16px; }
   .proof b { display:block; font-weight:400; font-size:22px; color:var(--panel-ink); }
-  .proof span { font-size:12px; color:#9c9a97; }
+  .proof span { font-size:12.5px; color:#9fabc2; }
   .right { display:grid; place-items:center; padding:32px 16px; }
   .card { width:min(400px, 100%); background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:28px; }
-  .label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ash); }
-  h2 { font-weight:400; font-size:28px; margin:6px 0 6px; }
+  .label { font-size:12.5px; font-weight:500; color:var(--ash); }
+  h2 { font-weight:600; font-size:26px; margin:6px 0 6px; }
   .sub { color:var(--ash); margin:0 0 20px; font-size:14px; }
   .gbtn { min-height:44px; display:flex; justify-content:center; }
   .or { display:flex; align-items:center; gap:10px; color:var(--ash); font-size:12px; margin:18px 0; }
@@ -33,7 +34,8 @@
   label { display:grid; gap:4px; }
   input { font:inherit; color:var(--ink); background:var(--bone); border:1px solid var(--hair); border-radius:10px; padding:10px 12px; }
   input:focus { outline:2px solid var(--hi); border-color:var(--ink); }
-  button { font:inherit; cursor:pointer; border-radius:8px; padding:11px 14px; border:1px solid var(--hi); background:var(--hi); color:#0c0a08; }
+  :focus-visible { outline:2px solid var(--hi); outline-offset:2px; }
+  button { font:inherit; cursor:pointer; border-radius:8px; padding:11px 14px; border:1px solid var(--hi); background:var(--hi); color:#14213d; font-weight:600; }
   button:disabled { opacity:.6; }
   .note { font-size:12px; color:var(--ash); }
   .err { color:var(--warn); font-size:13px; min-height:18px; }
@@ -46,7 +48,7 @@
   <section class="left">
     <div class="brand"><span class="mark">₹</span>Cleared to Pay</div>
     <div>
-      <h1>Every vendor proven. Every invoice paid <em>once</em>.</h1>
+      <h1>Every vendor proven. Every invoice paid once.</h1>
       <p>An accounts-payable desk for an Indian 3PL. It checks who you are paying on live data, holds anything it cannot prove with a cited reason, and waits for a person before any money moves.</p>
     </div>
     <div class="proof">

@@ -17,6 +17,11 @@ DEFAULTS = {
     "inr_per_credit": 25.2,                # 15,000 credits for $4,500 = $0.30; at ₹84/$
     "price_per_invoice_inr": 60,           # our price to the client (above the all-in first-batch cost)
     "price_per_new_vendor_check_inr": 250,
+    # the client's operating account that payouts come out of. SAMPLE values: replace with the real
+    # account (or connect RazorpayX, whose balance then applies). Labelled as sample on the page.
+    "company_account": {"name": "Operating account", "bank": "HDFC Bank", "account_masked": "XXXXXXXX4321",
+                        "ifsc": "HDFC0000123", "opening_balance_inr": 2500000, "opening_date": "2026-10-01",
+                        "sample": True},
     # chart of accounts for bank-statement posting: account -> words in the payee's own description
     "chart_of_accounts": {
         "Staff meals": ["food", "restaurant", "meal", "dining", "grocery", "groceries"],

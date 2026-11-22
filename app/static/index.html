@@ -4,26 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cleared to Pay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* Monochrome finance-desk tokens (after the Ramp style on styles.refero.design):
-     one highlighter colour, used only where money moves or a person must act. */
+  /* Passbook & ledger: bank-ink navy on cool passbook paper, ruled lines, statuses as ink stamps.
+     Stamp red = held, ledger green = paid / cleared, marigold = a person must act (the only accent). */
   :root {
-    --ink:#0c0a08; --ink2:#1a1919; --ash:#6d6c6b; --smoke:#d3d3d3; --hair:#e5e7eb;
-    --bone:#f4f2f0; --paper:#ffffff; --hi:#e4f222; --hi-ink:#0c0a08;
-    --warn:#b42318; --warn-bg:#fef3f2; --ok:#166534; --ok-bg:#f0fdf4; --mute-bg:#f4f2f0;
+    --ink:#14213d; --ink2:#1d2b4a; --ash:#5b667a; --smoke:#c3cad6; --hair:#d6dce5;
+    --bone:#f6f7f9; --paper:#ffffff; --hi:#d99a00; --hi-ink:#14213d; --hi-soft:#fbf1d6;
+    --warn:#b3261e; --warn-bg:#fbeceb; --ok:#1f6f43; --ok-bg:#e8f3ec; --mute-bg:#eef1f5;
+    --side:#14213d; --side-ink:#dfe5f0; --side-mute:#8f9bb3;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --ink:#f4f2f0; --ink2:#e5e3e0; --ash:#a3a19e; --smoke:#3a3937; --hair:#2b2a29;
-      --bone:#0f0e0d; --paper:#181716; --warn:#f97066; --warn-bg:#2a1614; --ok:#4ade80; --ok-bg:#10231a; --mute-bg:#201f1d;
+      --ink:#e8ecf4; --ink2:#d3d9e6; --ash:#9aa6bc; --smoke:#3a4660; --hair:#253049;
+      --bone:#0e1424; --paper:#151d30; --hi:#f0b429; --hi-ink:#0e1424; --hi-soft:#3a2f10;
+      --warn:#f2867d; --warn-bg:#2c1716; --ok:#6fcf97; --ok-bg:#12261b; --mute-bg:#1b2438;
+      --side:#0a0f1c; --side-ink:#d3d9e6; --side-mute:#7d89a3;
     }
   }
   * { box-sizing:border-box; }
   [hidden] { display:none !important; }
   html, body { margin:0; background:var(--bone); color:var(--ink); }
-  body { font:400 15px/1.5 Inter, "IBM Plex Sans", system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
+  body { font:400 15px/1.55 "Instrument Sans", system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; }
+  :focus-visible { outline:2px solid var(--hi); outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
   .wrap { max-width:1200px; margin:0 auto; padding:0 16px; }
-  .label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ash); }
+  .label { font-size:12.5px; font-weight:500; color:var(--ash); }
   button { font:inherit; color:inherit; cursor:pointer; }
   a { color:inherit; }
 
@@ -31,20 +38,25 @@
   /* app shell: collapsible sidebar + top bar with a three-line toggle */
   .shell { display:grid; grid-template-columns:240px 1fr; min-height:100vh; transition:grid-template-columns .2s ease; }
   .shell.collapsed { grid-template-columns:0 1fr; }
-  .sidebar { position:sticky; top:0; height:100vh; overflow:hidden auto; background:var(--paper); border-right:1px solid var(--hair);
+  .sidebar { position:sticky; top:0; height:100vh; overflow:hidden auto; background:var(--side); color:var(--side-ink); border-right:1px solid var(--hair);
              display:flex; flex-direction:column; gap:8px; padding:16px 12px; min-width:0; }
   .shell.collapsed .sidebar { padding:0; border-right:0; visibility:hidden; }
-  .side-brand { display:flex; gap:10px; align-items:center; padding:4px 8px 12px; border-bottom:1px solid var(--hair); }
+  .side-brand { display:flex; gap:10px; align-items:center; padding:4px 8px 14px; border-bottom:1px solid rgba(255,255,255,.12); font-weight:600; }
+  .side-brand .note { color:var(--side-mute); font-weight:400; }
   .side-nav { display:flex; flex-direction:column; gap:2px; }
-  .side-group { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ash); padding:14px 10px 4px; }
+  .side-group { font-size:12.5px; color:var(--side-mute); padding:16px 10px 4px; }
   .side-nav button { display:flex; align-items:center; gap:10px; text-align:left; background:none; border:0; border-radius:8px;
-                     padding:8px 10px; color:var(--ash); white-space:nowrap; }
-  .side-nav button:hover { background:var(--mute-bg); color:var(--ink); }
-  .side-nav button[aria-selected="true"] { background:var(--mute-bg); color:var(--ink); box-shadow:inset 3px 0 0 var(--hi); }
-  .side-nav .ico { width:18px; text-align:center; color:var(--ash); }
-  .side-nav .count { margin-left:auto; font-size:12px; background:var(--hi); color:#0c0a08; border-radius:6px; padding:0 6px; }
+                     padding:8px 10px; color:var(--side-ink); opacity:.82; white-space:nowrap; }
+  .side-nav button:hover { background:rgba(255,255,255,.07); opacity:1; }
+  .side-nav button[aria-selected="true"] { background:rgba(255,255,255,.1); opacity:1; box-shadow:inset 3px 0 0 var(--hi); }
+  .side-nav .ico { width:18px; text-align:center; color:var(--side-mute); }
+  .side-nav .count { margin-left:auto; font-size:12px; font-weight:600; background:var(--hi); color:#14213d; border-radius:10px; padding:0 7px; }
   .side-nav .count:empty { display:none; }
-  .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:10px; padding:12px 8px 4px; border-top:1px solid var(--hair); }
+  .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:10px; padding:12px 8px 4px; border-top:1px solid rgba(255,255,255,.12); }
+  .side-foot .chip { color:var(--side-mute); border-color:rgba(255,255,255,.16); }
+  .side-foot .btn, .side-foot .btn.ghost { background:transparent; color:var(--side-ink); border-color:rgba(255,255,255,.3); }
+  .side-foot .btn:hover { background:rgba(255,255,255,.08); }
+  .me .note { color:var(--side-mute); }
   .side-foot .chips { flex-direction:column; align-items:flex-start; margin:0; }
   .me { font-size:13px; } .me .note { display:block; }
   .btn.small { padding:6px 10px; font-size:13px; }
@@ -60,12 +72,25 @@
   .econ { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
   .econ .card b { display:block; font-weight:400; font-size:30px; margin-top:6px; font-variant-numeric:tabular-nums; }
   .letter { white-space:pre-wrap; font-size:13px; line-height:1.55; }
+  .passbook { display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; border:1px solid var(--hair); border-radius:14px; background:var(--paper); overflow:hidden;
+              background-image:repeating-linear-gradient(transparent 0 31px, var(--mute-bg) 31px 32px); }
+  .passbook > div { padding:18px 20px; border-right:1px solid var(--hair); }
+  .passbook > div:last-child { border-right:0; }
+  .pb-main { background:var(--paper); }
+  .pb-balance { font-size:36px; font-weight:600; letter-spacing:-.01em; margin:4px 0; }
+  .pb-num { font-size:22px; margin-top:6px; }
+  .sub-h { font-weight:600; font-size:17px; margin:28px 0 10px; }
+  table.ledger tr.nocount td { color:var(--ash); }
+  table.ledger td.num { font-weight:500; }
+  td.num, th.num { white-space:nowrap; }
+  a.btn { text-decoration:none; display:inline-block; text-align:center; }
   @media (max-width: 900px) {
     .shell, .shell.collapsed { grid-template-columns:1fr; }
     .sidebar { position:fixed; inset:0 auto 0 0; width:260px; z-index:20; transform:translateX(-100%); transition:transform .2s ease; visibility:visible !important; padding:16px 12px !important; border-right:1px solid var(--hair) !important; }
     .shell.mobile-open .sidebar { transform:none; }
     .shell.mobile-open .nav-scrim { opacity:1; pointer-events:auto; z-index:15; }
     .econ { grid-template-columns:1fr; }
+    .passbook { grid-template-columns:1fr 1fr; } .passbook > div { border-bottom:1px solid var(--hair); }
   }
   header.top { border-bottom:1px solid var(--hair); background:var(--paper); position:sticky; top:0; z-index:5; }
   header.top .wrap { display:flex; align-items:center; gap:16px; height:56px; }
@@ -84,7 +109,7 @@
 
   /* hero */
   .hero { padding:40px 0 24px; display:grid; grid-template-columns:1.4fr 1fr; gap:32px; align-items:end; }
-  .hero h1 { font-weight:400; font-size:48px; line-height:1.02; letter-spacing:-.01em; margin:8px 0 12px; }
+  .hero h1 { font-weight:600; font-size:44px; line-height:1.04; letter-spacing:-.02em; margin:8px 0 12px; max-width:18ch; }
   .hero p { color:var(--ash); margin:0; max-width:56ch; }
   .promise { background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:20px; }
   .promise ol { margin:8px 0 0; padding-left:18px; }
@@ -96,8 +121,8 @@
   .stat:last-child { border-right:0; }
   .stat b { display:block; font-weight:400; font-size:30px; line-height:1.1; margin-top:6px; font-variant-numeric:tabular-nums; }
   .stat .label { display:block; }
-  .stat.act b { background:linear-gradient(transparent 55%, var(--hi) 55%); display:inline-block; color:#0c0a08; padding:0 2px; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stat.act b { color:var(--ink); background:none; border-bottom:4px solid var(--hi); } }
+  .stat.act { background:var(--hi-soft); box-shadow:inset 0 -3px 0 var(--hi); }
+  .stat.act b { font-weight:600; }
 
   /* pipeline */
   .flow { margin:24px 0 8px; display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
@@ -123,14 +148,20 @@
   .code.bad { border-color:var(--warn); color:var(--warn); background:var(--warn-bg); }
   .code.good { border-color:transparent; color:var(--ok); background:var(--ok-bg); }
   .code.info { color:var(--ash); }
-  .status { font-size:12px; border-radius:6px; padding:2px 8px; border:1px solid var(--hair); }
-  .status.ready { background:var(--hi); border-color:var(--hi); color:var(--hi-ink); }
-  .status.held { border-color:var(--warn); color:var(--warn); }
-  .status.cannot_verify { background:var(--mute-bg); }
-  .status.paid { background:var(--ink); color:var(--bone); border-color:var(--ink); }
+  /* statuses are ink stamps: the one bold device on the page */
+  .status { display:inline-block; font-size:12.5px; font-weight:700; letter-spacing:.02em; border-radius:5px; padding:1px 9px;
+            border:1.5px solid currentColor; color:var(--ash); transform:rotate(-2deg); background:transparent; }
+  .status.ready { color:#8a6100; border-color:var(--hi); background:var(--hi-soft); }
+  .status.held { color:var(--warn); background:var(--warn-bg); }
+  .status.cannot_verify { color:var(--ash); border-style:dashed; }
+  .status.paid { color:var(--ok); background:var(--ok-bg); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .status.ready { color:var(--hi); } }
   .actions { display:flex; flex-direction:column; gap:8px; align-items:stretch; min-width:180px; }
-  .btn { border-radius:6px; padding:9px 14px; border:1px solid var(--ink); background:var(--paper); }
-  .btn.pay { background:var(--hi); border-color:var(--hi); color:var(--hi-ink); }
+  .btn { border-radius:8px; padding:9px 14px; border:1px solid var(--ink); background:var(--paper); color:var(--ink); }
+  .btn:hover { background:var(--mute-bg); }
+  .btn.pay { background:var(--hi); border-color:var(--hi); color:#14213d; font-weight:600; }
+  .btn.pay:hover { filter:brightness(1.05); }
+  .btn:disabled { opacity:.6; cursor:progress; }
   .btn.ghost { border-color:var(--hair); color:var(--ash); }
   .note { font-size:12px; color:var(--ash); }
   .empty { background:var(--paper); border:1px dashed var(--smoke); border-radius:16px; padding:28px; color:var(--ash); }
@@ -197,6 +228,7 @@
     <div class="side-group">Trust</div>
     <button role="tab" data-tab="vendors" aria-selected="false"><span class="ico">◎</span>Vendor check</button>
     <div class="side-group">Money</div>
+    <button role="tab" data-tab="account" aria-selected="false"><span class="ico">⌂</span>Bank account</button>
     <button role="tab" data-tab="econ" aria-selected="false"><span class="ico">₹</span>Cost &amp; price</button>
     <button role="tab" data-tab="ledger" aria-selected="false"><span class="ico">▤</span>Cost ledger</button>
     <div class="side-group">About</div>
@@ -273,6 +305,11 @@
       <div><button class="btn pay" type="submit" id="bgo">Post lines</button> <span class="note" id="bmsg">A name lookup costs 0.2 Crustdata credits; known vendors cost nothing.</span></div>
     </form>
     <div id="btable"></div>
+  </section>
+
+  <section class="panel" id="tab-account" hidden>
+    <div class="panel-head"><h2>Bank account</h2><span class="muted" id="acctNote"></span></div>
+    <div id="acct"></div>
   </section>
 
   <section class="panel" id="tab-econ" hidden>
@@ -405,6 +442,7 @@ function renderWork() {
       <button class="btn ${r.outcome === 'ready' ? 'pay' : ''}" data-act="approve" data-id="${esc(r.invoice_id)}">${r.outcome === 'ready' ? 'Approve payment' : 'Approve anyway'}</button>
       <button class="btn" data-act="reject" data-id="${esc(r.invoice_id)}">Reject</button>
       <button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit trail</button>
+      <a class="btn ghost" href="/invoices/${encodeURIComponent(r.invoice_id)}/doc" target="_blank" rel="noopener">Open bill</a>
       ${r.outcome === 'ready' ? '' : '<span class="note">Even if approved, the desk will not pay an uncleared vendor or an unverified account.</span>'}
     </div></div>`;
   }).join('') || '<div class="empty">Nothing is waiting for you. New invoices appear here after the checks run.</div>';
@@ -413,7 +451,7 @@ function renderWork() {
 function renderAll() {
   document.getElementById('alltable').innerHTML = ROWS.length ? `<table><thead><tr><th>Status</th><th>Payee</th><th>Invoice</th><th class="num">Amount</th><th>Latest reason</th><th></th></tr></thead><tbody>` +
     ROWS.map(r => { const [cls, txt] = statusOf(r); const last = r.reasons[r.reasons.length - 1] || {};
-      return `<tr><td><span class="status ${cls}">${esc(txt)}</span></td><td>${esc(r.raw.vendor_name)}</td><td>${esc(r.raw.invoice_no)}<div class="note">${esc(r.raw.invoice_date)}</div></td><td class="num">${money(r.raw.amount)}</td><td>${esc(last.text || '')}</td><td><button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit</button></td></tr>`; }).join('') +
+      return `<tr><td><span class="status ${cls}">${esc(txt)}</span></td><td>${esc(r.raw.vendor_name)}</td><td>${esc(r.raw.invoice_no)}<div class="note">${esc(r.raw.invoice_date)}</div></td><td class="num">${money(r.raw.amount)}</td><td>${esc(last.text || '')}</td><td><button class="btn ghost" data-act="audit" data-id="${esc(r.invoice_id)}">Audit</button> <a class="btn ghost" href="/invoices/${encodeURIComponent(r.invoice_id)}/doc" target="_blank" rel="noopener">Bill</a></td></tr>`; }).join('') +
     '</tbody></table>' : '<div class="empty">No invoices yet. Run <code>python -m app.cli inbox &lt;folder&gt;</code> or POST a batch to <code>/runs</code>.</div>';
 }
 
@@ -433,7 +471,7 @@ async function openAudit(id) {
   document.getElementById('drawerIn').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center"><span class="label">Audit trail</span><button class="btn ghost" id="closeDrawer">Close</button></div>
     <h2 style="font-weight:400;margin:12px 0 4px">${esc(a.invoice.raw.vendor_name)} · ${money(a.invoice.raw.amount)}</h2>
-    <div class="meta muted">${esc(a.invoice.raw.invoice_no)} · ${esc(a.invoice_id || id)}</div>
+    <div class="meta muted">${esc(a.invoice.raw.invoice_no)} · ${esc(a.invoice_id || id)} · <a href="/invoices/${encodeURIComponent(id)}/doc" target="_blank" rel="noopener">Open the bill</a></div>
     <p><span class="status ${cls}">${esc(txt)}</span></p>
     ${reasonList(a.invoice, false)}
     <p class="label" style="margin-top:24px">Plain-language decision</p><div class="src letter" id="letter">Loading…</div>
@@ -548,6 +586,34 @@ document.getElementById('bform').addEventListener('submit', async ev => {
   } finally { btn.disabled = false; }
 });
 
+// ---- bank account
+const rupees = n => (n < 0 ? '−' : '') + '₹' + Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+async function renderAccount() {
+  const d = await api('/account').then(r => r.json());
+  const a = d.account;
+  document.getElementById('acctNote').textContent = a.sample
+    ? 'Sample account details and opening balance (test data). Payouts here are simulated unless RazorpayX is connected.' : '';
+  const TX = {posted: ['paid', 'Posted'], held: ['held', 'Held'], cannot_verify: ['cannot_verify', 'Cannot verify'],
+              processed: ['paid', 'Processed'], processing: ['ready', 'Processing'], queued: ['ready', 'Queued'],
+              failed: ['held', 'Failed'], reversed: ['held', 'Reversed'], paid: ['paid', 'Paid']};
+  document.getElementById('acct').innerHTML = `
+    <div class="passbook">
+      <div class="pb-main"><span class="label">Available balance</span><div class="pb-balance">${rupees(a.balance_inr)}</div>
+        <div class="note">${esc(a.name)}, ${esc(a.bank)} ${esc(a.account_masked)} (IFSC ${esc(a.ifsc)})</div></div>
+      <div><span class="label">Opening balance on ${esc(a.opening_date)}</span><div class="pb-num">${rupees(a.opening_balance_inr)}</div></div>
+      <div><span class="label">Paid out</span><div class="pb-num">${rupees(-a.total_out_inr)}</div></div>
+      <div><span class="label">Held, not debited</span><div class="pb-num">${rupees(a.held_inr)}</div></div>
+    </div>
+    <h3 class="sub-h">Transaction history</h3>
+    ${d.transactions.length ? `<table class="ledger"><thead><tr><th>Date</th><th>Type</th><th>Paid to</th><th>Details</th><th>Status</th><th class="num">Amount</th></tr></thead><tbody>` +
+      d.transactions.map(t => { const [c, l] = TX[t.status] || ['', t.status];
+        return `<tr class="${t.counts ? '' : 'nocount'}"><td>${esc(t.date)}</td><td>${esc(t.kind)}${t.simulated ? '<div class="note">simulated</div>' : ''}</td>
+          <td>${esc(t.party || '—')}</td><td class="note">${esc(t.detail)}${t.invoice_id ? ` <a href="/invoices/${encodeURIComponent(t.invoice_id)}/doc" target="_blank" rel="noopener">Open bill</a>` : ''}</td>
+          <td><span class="status ${c}">${esc(l)}</span></td><td class="num">${rupees(t.amount_inr)}</td></tr>`; }).join('') + '</tbody></table>'
+      : '<div class="empty">No money has moved yet. Approved payouts and posted bank lines appear here.</div>'}
+    <p class="note" style="margin-top:10px">Held and unverified lines are listed but not counted in the balance until a person clears them.</p>`;
+}
+
 // ---- cost & price
 async function renderEcon() {
   const e = await api('/economics').then(r => r.json());
@@ -563,7 +629,7 @@ async function renderEcon() {
 }
 
 // ---- navigation and shell
-const TITLES = {work: 'Worklist', all: 'All invoices', bank: 'Bank lines', vendors: 'Vendor check', econ: 'Cost & price', ledger: 'Cost ledger', how: 'How it decides'};
+const TITLES = {work: 'Worklist', all: 'All invoices', bank: 'Bank lines', vendors: 'Vendor check', account: 'Bank account', econ: 'Cost & price', ledger: 'Cost ledger', how: 'How it decides'};
 function showTab(name) {
   if (!TITLES[name]) name = 'work';
   document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
@@ -576,6 +642,7 @@ function showTab(name) {
   if (name === 'vendors') renderVendors();
   if (name === 'bank') renderBank();
   if (name === 'econ') renderEcon();
+  if (name === 'account') renderAccount();
   if (window.matchMedia('(max-width: 900px)').matches) setMobileNav(false);
 }
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));

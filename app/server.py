@@ -242,6 +242,36 @@ def vendors_list():
     return out
 
 
+@app.get("/account")
+def account():
+    """The client's operating account: balance and every money movement the desk knows about,
+    newest first. Payouts (from this desk) and bank-statement lines (posted or held) are both shown."""
+    from . import config
+    conn = connect()
+    acct = dict(config.get("company_account"))
+    tx_rows = []
+    for p in conn.execute("SELECT p.*, i.raw FROM payments p JOIN invoices i USING(invoice_id) WHERE p.provider_ref IS NOT NULL"):
+        raw = json.loads(p["raw"])
+        failed = (p["provider_status"] or "") in ("failed", "reversed", "cancelled", "rejected")
+        tx_rows.append({"at": p["updated_at"], "date": __import__("time").strftime("%Y-%m-%d", __import__("time").localtime(p["created_at"])),
+                        "kind": "Payout", "party": raw.get("vendor_name"), "detail": f"Invoice {raw.get('invoice_no')} · {p['provider_ref']}",
+                        "amount_inr": -(p["amount_paise"] / 100), "status": p["provider_status"] or p["status"], "counts": not failed,
+                        "simulated": p["provider"] == "local_sandbox", "invoice_id": p["invoice_id"]})
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name='bank_lines'").fetchone():
+        for b in conn.execute("SELECT * FROM bank_lines WHERE amount_paise IS NOT NULL"):
+            raw = json.loads(b["raw"])
+            tx_rows.append({"at": b["updated_at"], "date": b["date"], "kind": "Bank statement line", "party": b["payee"] or raw.get("description"),
+                            "detail": f"{raw.get('description')}" + (f" → {b['account']}" if b["account"] else ""),
+                            "amount_inr": -(b["amount_paise"] / 100), "status": b["status"],
+                            "counts": b["status"] == "posted", "simulated": False, "line_id": b["line_id"]})
+    tx_rows.sort(key=lambda t: (str(t["date"]), t["at"]), reverse=True)
+    out = sum(-t["amount_inr"] for t in tx_rows if t["counts"])
+    acct["balance_inr"] = round(acct["opening_balance_inr"] - out, 2)
+    acct["total_out_inr"] = round(out, 2)
+    acct["held_inr"] = round(sum(-t["amount_inr"] for t in tx_rows if not t["counts"]), 2)
+    return {"account": acct, "transactions": tx_rows}
+
+
 @app.get("/economics")
 def economics():
     """Measured cost per job from the ledger, next to our price. All figures in ₹."""
@@ -270,6 +300,79 @@ def economics():
                                       "note": "vendor already checked: its check is cached"},
         "per_bank_line": {"measured_inr": round(bank_credits * rate / bank_lines, 2) if bank_lines else None, "samples": bank_lines},
     }
+
+
+@app.get("/invoices/{invoice_id}/doc", response_class=HTMLResponse)
+def invoice_doc(invoice_id: str):
+    """The bill as a document anyone on the team can open, print or save as PDF: what the vendor sent,
+    the original message (and PDF) when it came from the inbox, and the desk's decision stamped on it."""
+    import html
+    from .checks import mask_account
+    conn = connect()
+    inv = conn.execute("SELECT * FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone()
+    if not inv:
+        raise HTTPException(404)
+    raw, reasons = json.loads(inv["raw"]), json.loads(inv["reasons"])
+    pay = conn.execute("SELECT * FROM payments WHERE invoice_id=?", (invoice_id,)).fetchone()
+    e = lambda x: html.escape(str(x if x not in (None, "") else "—"))
+    orig = raw.get("_original") or {}
+    acct = raw.get("bank_account") or {}
+    stamp = {"PAID": ("Paid", "paid"), "CANNOT_VERIFY": ("Cannot verify", "bad"), "REJECTED": ("Rejected", "bad"),
+             "PAYOUT_FAILED": ("Payout failed", "bad")}.get(inv["state"]) or (("Ready to pay", "ok") if inv["outcome"] == "ready" else ("Held", "bad"))
+    rows = [("Vendor", raw.get("vendor_name")), ("GSTIN", raw.get("vendor_gstin")), ("Invoice number", raw.get("invoice_no")),
+            ("Invoice date", raw.get("invoice_date")), ("Purchase order", raw.get("po_number")),
+            ("Pay to (as written on the bill)", f"{mask_account(acct.get('account_no'))} · {acct.get('ifsc')}" if acct else None),
+            ("Sender", orig.get("from") or raw.get("_from") or raw.get("vendor_domain"))]
+    pdfs = "".join(f'<p><a href="/docs/{e(p["id"])}.pdf" target="_blank" rel="noopener">Open the original PDF: {e(p["name"])}</a></p>'
+                   for p in orig.get("pdfs", []))
+    original = (f'<h2>Original message</h2><p class="meta">{e(orig.get("subject"))} · received {e(orig.get("date"))}</p>'
+                f'<pre>{e(orig.get("text"))}</pre>{pdfs}') if orig else \
+        '<h2>Original message</h2><p class="meta">This bill arrived as structured data, not as an email or PDF, so there is no original document to show.</p>'
+    why = "".join(f"<li>{e(r['text'])}</li>" for r in reasons)
+    paid = (f"<p>Payment {e(pay['provider_ref'] or 'not yet accepted')} via {e(pay['provider'])}"
+            f"{' (simulated: no money moved)' if pay['provider'] == 'local_sandbox' else ''}, status {e(pay['provider_status'] or pay['status'])}, "
+            f"to the verified account {e(pay['account_masked'])}.</p>") if pay else ""
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bill {e(raw.get('invoice_no'))} · {e(raw.get('vendor_name'))}</title>
+<style>
+ :root{{--ink:#14213d;--paper:#fbfcfe;--rule:#d9dee7;--red:#b3261e;--green:#1f6f43;--muted:#5b667a}}
+ body{{margin:0;background:#eef1f5;color:var(--ink);font:15px/1.55 "Instrument Sans",system-ui,sans-serif}}
+ .page{{max-width:760px;margin:24px auto;background:var(--paper);border:1px solid var(--rule);padding:40px 48px;position:relative}}
+ h1{{font-weight:600;font-size:26px;margin:0 0 4px}} h2{{font-size:17px;margin:32px 0 8px}}
+ .meta{{color:var(--muted);font-size:13px;margin:0}}
+ table{{width:100%;border-collapse:collapse;margin-top:20px}} td{{padding:9px 0;border-bottom:1px solid var(--rule);vertical-align:top}}
+ td:first-child{{color:var(--muted);width:42%}} .amount td{{font-size:22px;color:var(--ink);font-variant-numeric:tabular-nums}}
+ pre{{white-space:pre-wrap;background:#f1f3f7;padding:14px;border-radius:6px;font:13px/1.5 ui-monospace,Menlo,monospace}}
+ .stamp{{position:absolute;top:36px;right:44px;transform:rotate(-8deg);border:3px solid currentColor;border-radius:8px;padding:4px 12px;font-weight:700;font-size:20px;letter-spacing:.04em}}
+ .stamp.paid,.stamp.ok{{color:var(--green)}} .stamp.bad{{color:var(--red)}}
+ .bar{{max-width:760px;margin:16px auto 0;display:flex;gap:8px;justify-content:flex-end}}
+ button,a.btn{{font:inherit;border:1px solid var(--ink);background:#fff;color:var(--ink);border-radius:6px;padding:7px 12px;cursor:pointer;text-decoration:none}}
+ @media print{{.bar{{display:none}} body{{background:#fff}} .page{{border:0;margin:0}}}}
+ @media (max-width:640px){{.page{{padding:24px 16px}} .stamp{{position:static;display:inline-block;margin-bottom:12px}}}}
+</style></head><body>
+<div class="bar"><a class="btn" href="/">Back to the desk</a><button onclick="print()">Print or save as PDF</button></div>
+<article class="page">
+ <span class="stamp {stamp[1]}">{e(stamp[0])}</span>
+ <h1>Bill from {e(raw.get('vendor_name'))}</h1>
+ <p class="meta">Desk reference {e(invoice_id)}</p>
+ <table><tr class="amount"><td>Amount</td><td>₹{(inv['amount_paise'] or 0)/100:,.2f}</td></tr>
+ {''.join(f'<tr><td>{e(k)}</td><td>{e(v)}</td></tr>' for k, v in rows)}</table>
+ <h2>What the desk decided</h2><ul>{why}</ul>{paid}
+ {original}
+</article></body></html>"""
+
+
+@app.get("/docs/{doc_id}.pdf")
+def original_pdf(doc_id: str):
+    import re
+    from fastapi.responses import FileResponse
+    from .inbox import DOCS_DIR
+    if not re.fullmatch(r"[0-9a-f]{20}", doc_id):
+        raise HTTPException(404)
+    path = __import__("os").path.join(DOCS_DIR, doc_id + ".pdf")
+    if not __import__("os").path.exists(path):
+        raise HTTPException(404)
+    return FileResponse(path, media_type="application/pdf")
 
 
 @app.get("/invoices/{invoice_id}/letter")
@@ -330,7 +433,7 @@ def state():
     conn = connect()
     rows = conn.execute("SELECT i.invoice_id, i.raw, i.state, i.outcome, i.reasons, i.updated_at, p.provider_status, p.provider_ref "
                         "FROM invoices i LEFT JOIN payments p ON p.invoice_id=i.invoice_id ORDER BY i.rowid DESC LIMIT 200").fetchall()
-    return [{"invoice_id": r["invoice_id"], "raw": {k: v for k, v in json.loads(r["raw"]).items() if k != "bank_account"},
+    return [{"invoice_id": r["invoice_id"], "raw": {k: v for k, v in json.loads(r["raw"]).items() if k not in ("bank_account", "_original", "_evidence")},
              "state": r["state"], "outcome": r["outcome"], "updated_at": r["updated_at"],
              "payout_status": r["provider_status"], "payout_id": r["provider_ref"],
              "reasons": json.loads(r["reasons"])} for r in rows]

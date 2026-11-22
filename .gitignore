@@ -9,3 +9,4 @@ data/*.db-*
 .claude/
 data/demo_vendors.json
 data/.session_secret
+data/docs/

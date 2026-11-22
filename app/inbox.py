@@ -239,6 +239,21 @@ def extract(msg: dict, conn, run_id=None, client=None) -> dict:
 
 # ---------------------------------------------------------------- inbox -> request
 
+DOCS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "docs")
+
+
+def keep_original(msg: dict) -> dict:
+    """Keep the document as received so a person can open it: the text, and any PDF saved by content hash."""
+    pdfs = []
+    for name, data in msg["pdfs"]:
+        os.makedirs(DOCS_DIR, exist_ok=True)
+        h = hashlib.sha256(data).hexdigest()[:20]
+        with open(os.path.join(DOCS_DIR, h + ".pdf"), "wb") as f:
+            f.write(data)
+        pdfs.append({"name": name, "id": h})
+    return {"from": msg["from"], "subject": msg["subject"], "date": msg["date"], "text": (msg["body"] or "")[:20000], "pdfs": pdfs}
+
+
 def read_inbox(folder: str, conn, client=None) -> dict:
     """Returns a request dict for pipeline.submit(): invoices + bank_change_requests + unreadable."""
     invoices, changes, unreadable = [], [], []
@@ -264,6 +279,7 @@ def read_inbox(folder: str, conn, client=None) -> dict:
                 "amount": inv["amount"], "currency": inv["currency"], "invoice_date": inv["invoice_date"],
                 "po_number": inv["po_number"],
                 "_message": msg["id"], "_from": msg["from"],
+                "_original": keep_original(msg),
                 "_evidence": inv["evidence"] + ([{"field": "sender", "quote": msg["from"]}] if msg["from"] else []),
             }
             if inv["bank_account_no"]:
