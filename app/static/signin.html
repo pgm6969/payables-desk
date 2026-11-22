@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Cleared to Pay</title>
+<style>
+  :root { --ink:#0c0a08; --ash:#6d6c6b; --hair:#e5e7eb; --bone:#f4f2f0; --paper:#ffffff; --hi:#e4f222; --warn:#b42318; --panel:#0c0a08; --panel-ink:#f4f2f0; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --ink:#f4f2f0; --ash:#a3a19e; --hair:#2b2a29; --bone:#0f0e0d; --paper:#181716; --warn:#f97066; --panel:#181716; } }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bone); color:var(--ink); font:400 15px/1.5 Inter, "IBM Plex Sans", system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
+  .split { display:grid; grid-template-columns:1.1fr 1fr; min-height:100vh; }
+  .left { background:var(--panel); color:var(--panel-ink); padding:48px; display:flex; flex-direction:column; justify-content:space-between; gap:32px; }
+  .brand { display:flex; gap:10px; align-items:center; font-size:16px; }
+  .mark { width:24px; height:24px; border-radius:6px; background:var(--hi); color:#0c0a08; display:grid; place-items:center; font-size:13px; }
+  .left h1 { font-weight:400; font-size:48px; line-height:1.02; letter-spacing:-.01em; margin:0 0 16px; max-width:14ch; }
+  .left h1 em { font-style:normal; background:linear-gradient(transparent 60%, rgba(228,242,34,.45) 60%); }
+  .left p { color:#b8b6b3; max-width:46ch; margin:0; }
+  .proof { display:grid; grid-template-columns:repeat(3, 1fr); gap:1px; background:#2b2a29; border:1px solid #2b2a29; border-radius:14px; overflow:hidden; }
+  .proof div { background:var(--panel); padding:16px; }
+  .proof b { display:block; font-weight:400; font-size:22px; color:var(--panel-ink); }
+  .proof span { font-size:12px; color:#9c9a97; }
+  .right { display:grid; place-items:center; padding:32px 16px; }
+  .card { width:min(400px, 100%); background:var(--paper); border:1px solid var(--hair); border-radius:16px; padding:28px; }
+  .label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ash); }
+  h2 { font-weight:400; font-size:28px; margin:6px 0 6px; }
+  .sub { color:var(--ash); margin:0 0 20px; font-size:14px; }
+  .gbtn { min-height:44px; display:flex; justify-content:center; }
+  .or { display:flex; align-items:center; gap:10px; color:var(--ash); font-size:12px; margin:18px 0; }
+  .or::before, .or::after { content:""; flex:1; border-top:1px solid var(--hair); }
+  form { display:grid; gap:12px; }
+  label { display:grid; gap:4px; }
+  input { font:inherit; color:var(--ink); background:var(--bone); border:1px solid var(--hair); border-radius:10px; padding:10px 12px; }
+  input:focus { outline:2px solid var(--hi); border-color:var(--ink); }
+  button { font:inherit; cursor:pointer; border-radius:8px; padding:11px 14px; border:1px solid var(--hi); background:var(--hi); color:#0c0a08; }
+  button:disabled { opacity:.6; }
+  .note { font-size:12px; color:var(--ash); }
+  .err { color:var(--warn); font-size:13px; min-height:18px; }
+  .notice { font-size:12px; border:1px dashed var(--hair); border-radius:10px; padding:10px 12px; color:var(--ash); margin-bottom:16px; }
+  @media (max-width: 860px) { .split { grid-template-columns:1fr; } .left { padding:28px 16px; } .left h1 { font-size:34px; } .proof { grid-template-columns:1fr 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="split">
+  <section class="left">
+    <div class="brand"><span class="mark">₹</span>Cleared to Pay</div>
+    <div>
+      <h1>Every vendor proven. Every invoice paid <em>once</em>.</h1>
+      <p>An accounts-payable desk for an Indian 3PL. It checks who you are paying on live data, holds anything it cannot prove with a cited reason, and waits for a person before any money moves.</p>
+    </div>
+    <div class="proof">
+      <div><b>5.1 + 5.2</b><span>vendor check and adverse-media screen</span></div>
+      <div><b>1×</b><span>payout per invoice, through crashes</span></div>
+      <div><b>0</b><span>payments without a person's approval</span></div>
+    </div>
+  </section>
+  <section class="right">
+    <div class="card">
+      <span class="label">Payables desk</span>
+      <h2 id="title">Sign up to continue</h2>
+      <p class="sub">Your identity is recorded with every approval, so the audit trail shows who released each payment.</p>
+      <div id="google" hidden>
+        <div class="gbtn" id="gbtn"></div>
+        <p class="note" style="text-align:center;margin-top:10px">Google accounts only. We store your name and email, nothing else.</p>
+      </div>
+      <div id="local" hidden>
+        <div class="notice">Google sign-in is not configured on this server (no <code>GOOGLE_CLIENT_ID</code>). You can create a <b>local demo account</b>: it is labelled “local account” on every approval it records.</div>
+        <form id="lform">
+          <label><span class="label">Your name</span><input name="name" required autocomplete="name" placeholder="Priya Sharma"></label>
+          <label><span class="label">Work email</span><input name="email" type="email" required autocomplete="email" placeholder="priya@company.in"></label>
+          <button type="submit" id="lgo">Create account and continue</button>
+        </form>
+      </div>
+      <p class="err" id="err" role="alert"></p>
+    </div>
+  </section>
+</div>
+<script>
+const CLIENT_ID = __GOOGLE_CLIENT_ID__;
+const err = document.getElementById('err');
+async function post(url, body) {
+  const r = await fetch(url, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.detail || 'Sign-in failed');
+  return b;
+}
+if (CLIENT_ID) {
+  document.getElementById('google').hidden = false;
+  document.getElementById('title').textContent = 'Sign up with Google';
+  const s = document.createElement('script');
+  s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+  s.onload = () => {
+    google.accounts.id.initialize({client_id: CLIENT_ID, callback: async res => {
+      err.textContent = '';
+      try { await post('/auth/google', {credential: res.credential}); location.href = '/'; } catch (e) { err.textContent = e.message; }
+    }});
+    google.accounts.id.renderButton(document.getElementById('gbtn'), {theme: 'outline', size: 'large', text: 'signup_with', shape: 'pill', width: 320});
+  };
+  s.onerror = () => { err.textContent = 'Could not load Google sign-in. Check your connection.'; };
+  document.head.appendChild(s);
+} else {
+  document.getElementById('local').hidden = false;
+  document.getElementById('lform').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target)); const b = document.getElementById('lgo');
+    b.disabled = true; err.textContent = '';
+    try { await post('/auth/local', f); location.href = '/'; } catch (e) { err.textContent = e.message; b.disabled = false; }
+  });
+}
+</script>
+</body>
+</html>

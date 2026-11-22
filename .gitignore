@@ -8,3 +8,4 @@ data/*.db-*
 .DS_Store
 .claude/
 data/demo_vendors.json
+data/.session_secret

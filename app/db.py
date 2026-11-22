@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_by  TEXT,
     decided_at  REAL,
     note        TEXT,
-    vendor_hash TEXT                       -- vendor record (bank, GSTIN, domain, status) when approved
+    vendor_hash TEXT,                      -- vendor record (bank, GSTIN, domain, status) when approved
+    first_by    TEXT,                      -- first of two approvers (large payments)
+    first_at    REAL
 );
 CREATE TABLE IF NOT EXISTS drafts (
     invoice_id  TEXT PRIMARY KEY,          -- drafted, NEVER sent: a person checks and sends it
@@ -118,7 +120,8 @@ def connect() -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     # older databases: add columns introduced later (no-op if present)
     for table, col in (("payments", "provider_status TEXT"), ("payments", "utr TEXT"), ("payments", "detail TEXT"),
-                       ("approvals", "vendor_hash TEXT")):
+                       ("approvals", "vendor_hash TEXT"),
+                       ("approvals", "first_by TEXT"), ("approvals", "first_at REAL")):
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
         except sqlite3.OperationalError:

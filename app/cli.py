@@ -1,6 +1,7 @@
 """Command line:
   python -m app.cli run requests/batch.json     submit a batch and process it
   python -m app.cli resume                      continue every unfinished run (after a crash/kill)
+  python -m app.cli bank lines.json             post bank-statement lines to payee + account
   python -m app.cli payouts                     refresh RazorpayX payout status (queued/processing)
   python -m app.cli queue                       list invoices waiting for a person
   python -m app.cli approve <invoice_id> --by NAME
@@ -41,6 +42,7 @@ def main():
     sub.add_parser("resume")
     sub.add_parser("queue")
     sub.add_parser("payouts")
+    bk = sub.add_parser("bank"); bk.add_argument("file")
     for name in ("approve", "reject"):
         p = sub.add_parser(name); p.add_argument("invoice_id"); p.add_argument("--by", required=True); p.add_argument("--note", default="")
     lg = sub.add_parser("ledger"); lg.add_argument("run_id", nargs="?")
@@ -56,6 +58,11 @@ def main():
         print(json.dumps(run_inbox(a.folder, conn), indent=2, ensure_ascii=False))
     elif a.cmd == "resume":
         print(json.dumps(pipeline.resume_all(conn), indent=2, ensure_ascii=False))
+    elif a.cmd == "bank":
+        from . import bank
+        with open(a.file) as f:
+            req = json.load(f)
+        print(json.dumps(bank.process(bank.submit(req, conn), conn), indent=2, ensure_ascii=False))
     elif a.cmd == "payouts":
         print(json.dumps(pipeline.sync_payouts(conn), indent=2, ensure_ascii=False))
     elif a.cmd == "queue":

@@ -132,6 +132,7 @@ def match_po(invoice: dict, pos: list[dict], amount_paise: int):
     if not po:
         return False, f"purchase order {po_no} not found in the client's records"
     po_paise = to_paise(po.get("amount"))
-    if po_paise and abs(amount_paise - po_paise) > PO_TOLERANCE * po_paise:
+    from . import config
+    if po_paise and abs(amount_paise - po_paise) > float(config.get("po_tolerance")) * po_paise:
         return False, f"invoice amount ₹{amount_paise/100:,.2f} differs from PO {po_no} amount ₹{po_paise/100:,.2f}"
     return True, f"matches PO {po_no}"

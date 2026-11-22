@@ -30,6 +30,8 @@ VENDORS = [
      "verified_bank_account": {"ifsc": "ICIC0000104", "account_no": "010405001234"}},
     {"vendor_id": "V-SX", "legal_name": "Safexpress Private Limited", "gstin": "07AAECS4363H1ZA", "domain": "safexpress.com",
      "verified_bank_account": {"ifsc": "SBIN0000691", "account_no": "30987654321"}},
+    {"vendor_id": "V-AWS", "legal_name": "Amazon Web Services EMEA SARL", "domain": "aws.amazon.com", "status": "cleared",
+     "bank_descriptors": ["AWS EMEA"], "default_account": "Cloud hosting"},
     {"vendor_id": "V-SC", "legal_name": "Shreeji Cargo Movers Private Limited", "gstin": "", "domain": "shreejicargomovers.in",
      "verified_bank_account": {"ifsc": "PUNB0000001", "account_no": "112233445566"}},
 ]
@@ -86,6 +88,15 @@ def main():
     for inv in out["invoices"]:
         print(inv["line"], inv["state"], inv["outcome"], "|", inv["reasons"][-1]["text"] if inv["reasons"] else "")
     print("credits used:", out["credits_used"])
+    # the organizers' worked example: post bank lines to payee + account
+    from app import bank
+    lines = {"bank_lines": [
+        {"date": "3 Oct 2026", "description": "RAZ*SWIGGY BLR", "amount": "₹1,240"},
+        {"date": "7 Oct 2026", "description": "AWS EMEA", "amount": "₹18,500"},
+        {"date": "7 Oct 2026", "description": "AWS EMEA", "amount": "₹18,500"},
+        {"date": "9 Oct 2026", "description": "PAYTM*SHARMA TRD", "amount": "₹4,000"}]}
+    for l in bank.process(bank.submit(lines, conn), conn, vendor_list=VENDORS)["lines"]:
+        print("bank:", l["raw"]["description"], "|", l["status"], "|", l["payee"], "|", l["account"], "|", l["reasons"][-1]["text"][:90])
     print("vendors file:", vfile)
 
 

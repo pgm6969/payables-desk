@@ -19,6 +19,7 @@
     }
   }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   html, body { margin:0; background:var(--bone); color:var(--ink); }
   body { font:400 15px/1.5 Inter, "IBM Plex Sans", system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
   .wrap { max-width:1200px; margin:0 auto; padding:0 16px; }
@@ -27,6 +28,45 @@
   a { color:inherit; }
 
   /* top bar */
+  /* app shell: collapsible sidebar + top bar with a three-line toggle */
+  .shell { display:grid; grid-template-columns:240px 1fr; min-height:100vh; transition:grid-template-columns .2s ease; }
+  .shell.collapsed { grid-template-columns:0 1fr; }
+  .sidebar { position:sticky; top:0; height:100vh; overflow:hidden auto; background:var(--paper); border-right:1px solid var(--hair);
+             display:flex; flex-direction:column; gap:8px; padding:16px 12px; min-width:0; }
+  .shell.collapsed .sidebar { padding:0; border-right:0; visibility:hidden; }
+  .side-brand { display:flex; gap:10px; align-items:center; padding:4px 8px 12px; border-bottom:1px solid var(--hair); }
+  .side-nav { display:flex; flex-direction:column; gap:2px; }
+  .side-group { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ash); padding:14px 10px 4px; }
+  .side-nav button { display:flex; align-items:center; gap:10px; text-align:left; background:none; border:0; border-radius:8px;
+                     padding:8px 10px; color:var(--ash); white-space:nowrap; }
+  .side-nav button:hover { background:var(--mute-bg); color:var(--ink); }
+  .side-nav button[aria-selected="true"] { background:var(--mute-bg); color:var(--ink); box-shadow:inset 3px 0 0 var(--hi); }
+  .side-nav .ico { width:18px; text-align:center; color:var(--ash); }
+  .side-nav .count { margin-left:auto; font-size:12px; background:var(--hi); color:#0c0a08; border-radius:6px; padding:0 6px; }
+  .side-nav .count:empty { display:none; }
+  .side-foot { margin-top:auto; display:flex; flex-direction:column; gap:10px; padding:12px 8px 4px; border-top:1px solid var(--hair); }
+  .side-foot .chips { flex-direction:column; align-items:flex-start; margin:0; }
+  .me { font-size:13px; } .me .note { display:block; }
+  .btn.small { padding:6px 10px; font-size:13px; }
+  .main-col { min-width:0; }
+  .topbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:12px; height:56px; padding:0 16px;
+            background:color-mix(in srgb, var(--bone) 88%, transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--hair); }
+  .hamburger { display:grid; place-items:center; width:36px; height:36px; border-radius:8px; border:1px solid var(--hair); background:var(--paper); color:var(--ink); }
+  .hamburger:hover { border-color:var(--ink); }
+  .crumb { font-size:14px; }
+  .bform { display:grid; gap:10px; margin-bottom:12px; }
+  .bform textarea { font:inherit; font-size:14px; color:var(--ink); background:var(--bone); border:1px solid var(--hair); border-radius:10px; padding:10px 12px; resize:vertical; width:100%; }
+  .bform label { display:flex; flex-direction:column; gap:6px; }
+  .econ { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
+  .econ .card b { display:block; font-weight:400; font-size:30px; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .letter { white-space:pre-wrap; font-size:13px; line-height:1.55; }
+  @media (max-width: 900px) {
+    .shell, .shell.collapsed { grid-template-columns:1fr; }
+    .sidebar { position:fixed; inset:0 auto 0 0; width:260px; z-index:20; transform:translateX(-100%); transition:transform .2s ease; visibility:visible !important; padding:16px 12px !important; border-right:1px solid var(--hair) !important; }
+    .shell.mobile-open .sidebar { transform:none; }
+    .shell.mobile-open .nav-scrim { opacity:1; pointer-events:auto; z-index:15; }
+    .econ { grid-template-columns:1fr; }
+  }
   header.top { border-bottom:1px solid var(--hair); background:var(--paper); position:sticky; top:0; z-index:5; }
   header.top .wrap { display:flex; align-items:center; gap:16px; height:56px; }
   .brand { font-size:16px; display:flex; align-items:center; gap:10px; }
@@ -146,21 +186,37 @@
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
-    <div class="brand"><span class="mark">₹</span>Cleared to Pay</div>
-    <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="work" aria-selected="true">Worklist</button>
-      <button role="tab" data-tab="all" aria-selected="false">All invoices</button>
-      <button role="tab" data-tab="vendors" aria-selected="false">Vendor check</button>
-      <button role="tab" data-tab="ledger" aria-selected="false">Cost ledger</button>
-      <button role="tab" data-tab="how" aria-selected="false">How it decides</button>
-    </nav>
+<div class="shell" id="shell">
+<aside class="sidebar" id="sidebar" aria-label="Main navigation">
+  <div class="side-brand"><span class="mark">₹</span><div><div>Cleared to Pay</div><div class="note">Payables desk</div></div></div>
+  <nav class="side-nav" role="tablist">
+    <div class="side-group">Work</div>
+    <button role="tab" data-tab="work" aria-selected="true"><span class="ico">◧</span>Worklist<span class="count" id="navWork"></span></button>
+    <button role="tab" data-tab="all" aria-selected="false"><span class="ico">≡</span>All invoices</button>
+    <button role="tab" data-tab="bank" aria-selected="false"><span class="ico">⇄</span>Bank lines</button>
+    <div class="side-group">Trust</div>
+    <button role="tab" data-tab="vendors" aria-selected="false"><span class="ico">◎</span>Vendor check</button>
+    <div class="side-group">Money</div>
+    <button role="tab" data-tab="econ" aria-selected="false"><span class="ico">₹</span>Cost &amp; price</button>
+    <button role="tab" data-tab="ledger" aria-selected="false"><span class="ico">▤</span>Cost ledger</button>
+    <div class="side-group">About</div>
+    <button role="tab" data-tab="how" aria-selected="false"><span class="ico">?</span>How it decides</button>
+  </nav>
+  <div class="side-foot">
     <div class="chips" id="chips"></div>
+    <div class="me" id="me"></div>
+    <button class="btn ghost small" id="signout">Sign out</button>
   </div>
+</aside>
+<div class="scrim nav-scrim" id="navScrim"></div>
+<div class="main-col">
+<header class="topbar">
+  <button class="hamburger" id="menuBtn" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="true">
+    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+  </button>
+  <div class="crumb"><span class="muted">Cleared to Pay /</span> <span id="crumb">Worklist</span></div>
 </header>
 <div class="banner" id="banner" hidden><div class="wrap" id="bannerText"></div></div>
-
 <main class="wrap">
   <div class="hero">
     <div>
@@ -183,9 +239,8 @@
 
   <section class="panel" id="tab-work">
     <div class="panel-head"><h2>Waiting for a person</h2><span class="muted" id="workCount"></span></div>
-    <div class="card approver"><label for="approver"><span class="label">Approving as</span></label>
-      <input id="approver" placeholder="Your name (recorded with every decision)" autocomplete="name">
-      <span class="note" id="approverMsg">Your name is saved with each approval or rejection in the audit trail.</span></div>
+    <div class="card approver"><span class="label">Approving as</span><b id="approverName">…</b>
+      <span class="note" id="approverMsg">Every approval or rejection is recorded with your signed-in identity. Payments at or above <span id="twoPerson"></span> need a second, different approver.</span></div>
     <div id="worklist"></div>
   </section>
 
@@ -210,6 +265,21 @@
     <div id="vtable"></div>
   </section>
 
+  <section class="panel" id="tab-bank" hidden>
+    <div class="panel-head"><h2>Bank lines</h2><span class="muted">Post bank-statement lines to the right payee and account. Duplicates are held; unknown payees are “cannot verify”.</span></div>
+    <form class="card bform" id="bform">
+      <label><span class="label">One line per row: date, description, amount</span>
+      <textarea id="blines" rows="5" placeholder="3 Oct 2026, RAZ*SWIGGY BLR, ₹1,240&#10;7 Oct 2026, AWS EMEA, ₹18,500"></textarea></label>
+      <div><button class="btn pay" type="submit" id="bgo">Post lines</button> <span class="note" id="bmsg">A name lookup costs 0.2 Crustdata credits; known vendors cost nothing.</span></div>
+    </form>
+    <div id="btable"></div>
+  </section>
+
+  <section class="panel" id="tab-econ" hidden>
+    <div class="panel-head"><h2>Cost &amp; price</h2><span class="muted">Measured from the cost ledger, next to what we would charge.</span></div>
+    <div id="econ"></div>
+  </section>
+
   <section class="panel" id="tab-ledger" hidden>
     <div class="panel-head"><h2>Cost ledger</h2><span class="muted" id="ledgerTotal"></span></div>
     <div id="ledgertable"></div>
@@ -227,6 +297,8 @@
     </div>
   </section>
 </main>
+</div>
+</div>
 
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-label="Audit trail"><div class="in" id="drawerIn"></div></aside>
@@ -268,27 +340,28 @@ function reasonList(r, onlyLast) {
     .map(x => { const [l, k] = LABEL[x.code] || [x.code, 'info']; return `<li><span class="code ${k}">${esc(l)}</span><span>${esc(x.text)}${x.missing ? ` <span class="muted">Missing: ${esc(x.missing)}.</span>` : ''}</span></li>`; }).join('') + '</ul>';
 }
 
-const approverInput = document.getElementById('approver'), approverMsg = document.getElementById('approverMsg');
-approverInput.value = store.get('approver') || '';
-approverInput.addEventListener('input', () => { store.set('approver', approverInput.value.trim()); approverInput.classList.remove('need'); approverMsg.classList.remove('need'); });
+const approverMsg = document.getElementById('approverMsg');
+let ME = null;
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  if (r.status === 401) { location.href = '/signin'; throw new Error('signed out'); }
+  return r;
+}
 
 async function decide(id, d, btn) {
-  const by = approverInput.value.trim();
-  if (!by) {  // no pop-ups: embedded browsers block prompt()
-    approverInput.classList.add('need'); approverMsg.classList.add('need');
-    approverMsg.textContent = 'Enter your name here first. It is recorded with the decision.';
-    approverInput.scrollIntoView({block: 'center'}); approverInput.focus();
-    return;
-  }
   if (btn) { btn.disabled = true; btn.textContent = d === 'approve' ? 'Approving…' : 'Rejecting…'; }
   try {
-    const r = await fetch(`/invoices/${encodeURIComponent(id)}/${d}`, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({by})});
+    const r = await api(`/invoices/${encodeURIComponent(id)}/${d}`, {method: 'POST', headers: {'content-type': 'application/json'}, body: '{}'});
+    const b = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const b = await r.json().catch(() => ({}));
       approverMsg.textContent = `Could not ${d}: ${b.detail || r.status}`; approverMsg.classList.add('need');
+    } else if (b.result === 'needs_second_approver') {
+      approverMsg.classList.remove('need');
+      approverMsg.textContent = `First approval recorded for ${b.by}. This payment is large: a second, different person must approve it.`;
     } else {
       approverMsg.classList.remove('need');
-      approverMsg.textContent = `${d === 'approve' ? 'Approved' : 'Rejected'} by ${by}. ${d === 'approve' ? 'Paying now…' : ''}`;
+      approverMsg.textContent = `${d === 'approve' ? 'Approved' : 'Rejected'} by ${b.by}. ${d === 'approve' ? 'Paying now…' : ''}`;
     }
   } finally {
     setTimeout(load, 700); setTimeout(load, 2000);
@@ -363,6 +436,7 @@ async function openAudit(id) {
     <div class="meta muted">${esc(a.invoice.raw.invoice_no)} · ${esc(a.invoice_id || id)}</div>
     <p><span class="status ${cls}">${esc(txt)}</span></p>
     ${reasonList(a.invoice, false)}
+    <p class="label" style="margin-top:24px">Plain-language decision</p><div class="src letter" id="letter">Loading…</div>
     ${a.vendor_check ? `<p class="label" style="margin-top:24px">Vendor check · ${esc(a.vendor_check.verdict.replace('_', ' '))}</p>
       <div class="src">${esc(a.vendor_check.summary)}
         <div class="note" style="margin-top:6px">Adverse media: found ${a.vendor_check.screening.hits_found} · cleared as namesakes ${a.vendor_check.screening.hits_cleared} · escalated ${a.vendor_check.screening.hits_escalated} · ${a.vendor_check.cost.credits} credits · checked ${esc(a.vendor_check.checked_at)}</div>
@@ -381,6 +455,7 @@ async function openAudit(id) {
     <ul class="timeline">${a.events.map(e => { const d = JSON.parse(e.detail); return `<li><span class="muted">${t(e.at)}</span><span>${esc(e.kind)}${d.to ? ' → ' + esc(d.to) : ''}${d.by ? ' by ' + esc(d.by) : ''}${d.reason && d.reason.text ? ' · ' + esc(d.reason.text) : ''}</span></li>`; }).join('')}</ul>`;
   document.getElementById('drawer').classList.add('open'); document.getElementById('scrim').classList.add('open');
   document.getElementById('closeDrawer').onclick = closeAudit;
+  api(`/invoices/${encodeURIComponent(id)}/letter`).then(r => r.json()).then(l => { document.getElementById('letter').textContent = l.text; });
 }
 function closeAudit() { document.getElementById('drawer').classList.remove('open'); document.getElementById('scrim').classList.remove('open'); }
 document.getElementById('scrim').onclick = closeAudit;
@@ -445,19 +520,89 @@ document.getElementById('syncPayouts').onclick = async e => {
   e.target.disabled = false; load();
 };
 
+// ---- bank lines
+const BSTATUS = {posted: ['paid', 'Posted'], held: ['held', 'Held'], cannot_verify: ['cannot_verify', 'Cannot verify'], new: ['', 'Checking']};
+async function renderBank() {
+  const rows = await api('/bank').then(r => r.json());
+  document.getElementById('btable').innerHTML = rows.length ? `<table><thead><tr><th>Status</th><th>Bank line</th><th class="num">Amount</th><th>Payee</th><th>Account</th><th>Reason</th></tr></thead><tbody>` +
+    rows.map(r => { const [c, t] = BSTATUS[r.status] || ['', r.status]; const last = r.reasons[r.reasons.length - 1] || {};
+      return `<tr><td><span class="status ${c}">${t}</span></td><td>${esc(r.raw.description)}<div class="note">${esc(r.raw.date)}</div></td><td class="num">${money(r.raw.amount)}</td>
+        <td>${esc(r.payee || '—')}</td><td>${esc(r.account || '—')}</td><td class="note">${esc(last.text || '')}</td></tr>`; }).join('') + '</tbody></table>'
+    : '<div class="empty">No bank lines yet. Paste some above.</div>';
+}
+document.getElementById('bform').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const lines = document.getElementById('blines').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    // date, description, amount (the amount may itself contain commas: ₹1,240)
+    const m = l.match(/^(.+?),\s*(.+?),\s*(₹?\s*[\d,]+(?:\.\d+)?)\s*$/);
+    const parts = l.split(',').map(x => x.trim());
+    return m ? {date: m[1].trim(), description: m[2].trim(), amount: m[3].trim()} : {date: parts[0], description: parts[1] || '', amount: parts.slice(2).join(',')};
+  });
+  const btn = document.getElementById('bgo'), msg = document.getElementById('bmsg');
+  btn.disabled = true; msg.textContent = 'Identifying payees…';
+  try {
+    const r = await api('/bank', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({bank_lines: lines})});
+    const b = await r.json();
+    msg.textContent = r.ok ? `Done: ${b.lines.filter(l => l.status === 'posted').length} posted, ${b.lines.filter(l => l.status !== 'posted').length} held or cannot verify.` : (b.detail || 'Failed');
+    renderBank();
+  } finally { btn.disabled = false; }
+});
+
+// ---- cost & price
+async function renderEcon() {
+  const e = await api('/economics').then(r => r.json());
+  const card = (label, measured, price, note) => `<div class="card"><span class="label">${label}</span>
+    <b>${measured == null ? '—' : '₹' + measured.toFixed(2)}</b><div class="note">measured cost${note ? ' · ' + esc(note) : ''}</div>
+    ${price != null ? `<div style="margin-top:10px">Price <b style="display:inline;font-size:18px">₹${price}</b>${measured != null ? ` · margin ${Math.round((1 - measured / price) * 100)}%` : ''}</div>` : ''}</div>`;
+  document.getElementById('econ').innerHTML = `<div class="econ">
+    ${card('New vendor check (5.1 + 5.2)', e.per_new_vendor_check.measured_inr, e.per_new_vendor_check.price_inr, `${e.per_new_vendor_check.samples} checks`)}
+    ${card('Per invoice, all-in', e.per_invoice.measured_inr, e.per_invoice.price_inr, `${e.per_invoice.samples} invoices; ${e.per_invoice.note}`)}
+    ${card('Per invoice, repeat vendor', e.per_invoice_repeat_vendor.measured_inr, e.per_invoice_repeat_vendor.price_inr, e.per_invoice_repeat_vendor.note)}
+    ${card('Per bank line', e.per_bank_line.measured_inr, null, `${e.per_bank_line.samples} lines`)}
+    </div><p class="note" style="margin-top:12px">₹${e.inr_per_credit} per Crustdata credit (15,000 credits for $4,500, at ₹84/$). Prices are ours, set in the rules file; not a market quote.</p>`;
+}
+
+// ---- navigation and shell
+const TITLES = {work: 'Worklist', all: 'All invoices', bank: 'Bank lines', vendors: 'Vendor check', econ: 'Cost & price', ledger: 'Cost ledger', how: 'How it decides'};
 function showTab(name) {
-  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  ['work', 'all', 'vendors', 'ledger', 'how'].forEach(t => document.getElementById('tab-' + t).hidden = t !== name);
+  if (!TITLES[name]) name = 'work';
+  document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  Object.keys(TITLES).forEach(t => document.getElementById('tab-' + t).hidden = t !== name);
+  document.getElementById('crumb').textContent = TITLES[name];
+  document.querySelector('.hero').hidden = !['work', 'all'].includes(name);
+  document.getElementById('stats').hidden = document.getElementById('flow').hidden = !['work', 'all'].includes(name);
   store.set('tab', name);
   if (name === 'ledger') renderLedger();
   if (name === 'vendors') renderVendors();
+  if (name === 'bank') renderBank();
+  if (name === 'econ') renderEcon();
+  if (window.matchMedia('(max-width: 900px)').matches) setMobileNav(false);
 }
-document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+const shell = document.getElementById('shell'), menuBtn = document.getElementById('menuBtn');
+function setMobileNav(open) { shell.classList.toggle('mobile-open', open); menuBtn.setAttribute('aria-expanded', String(open)); }
+function setCollapsed(c) { shell.classList.toggle('collapsed', c); menuBtn.setAttribute('aria-expanded', String(!c)); store.set('nav', c ? 'closed' : 'open'); }
+menuBtn.onclick = () => window.matchMedia('(max-width: 900px)').matches
+  ? setMobileNav(!shell.classList.contains('mobile-open')) : setCollapsed(!shell.classList.contains('collapsed'));
+document.getElementById('navScrim').onclick = () => setMobileNav(false);
+if (store.get('nav') === 'closed') setCollapsed(true);
+if (window.matchMedia('(max-width: 900px)').matches) menuBtn.setAttribute('aria-expanded', 'false');
+
+document.getElementById('signout').onclick = async () => { await fetch('/auth/signout', {method: 'POST'}); location.href = '/signin'; };
+async function loadMe() {
+  ME = await api('/me').then(r => r.json());
+  document.getElementById('me').innerHTML = `<b>${esc(ME.name)}</b><span class="note">${esc(ME.email)} · ${ME.provider === 'google' ? 'Google' : 'local account'}</span>`;
+  document.getElementById('approverName').textContent = ME.label;
+}
 
 async function load() {
   try {
-    [ROWS, META] = await Promise.all([fetch('/state').then(r => r.json()), fetch('/meta').then(r => r.json())]);
+    [ROWS, META] = await Promise.all([api('/state').then(r => r.json()), api('/meta').then(r => r.json())]);
   } catch { return; }
+  document.getElementById('twoPerson').textContent = '₹' + Number(META.two_person_threshold_inr || 100000).toLocaleString('en-IN');
+  const waiting = ROWS.filter(r => r.state === 'AWAITING_APPROVAL').length;
+  document.getElementById('navWork').textContent = waiting || '';
   document.getElementById('chips').innerHTML = [
     ['Crustdata live', META.crustdata_key], ['Inbox reader', META.model_key], [META.payments_simulated ? 'Payouts · sandbox (simulated)' : 'Payouts · RazorpayX test', META.payment_provider],
   ].map(([k, on]) => `<span class="chip ${on ? 'on' : 'off'}">${k}${on ? '' : ' · off'}</span>`).join('');
@@ -468,7 +613,7 @@ async function load() {
   if (!document.getElementById('tab-ledger').hidden) renderLedger();
 }
 showTab(store.get('tab') || 'work');
-load(); setInterval(load, 4000);
+loadMe(); load(); setInterval(load, 4000);
 </script>
 </body>
 </html>

@@ -172,7 +172,7 @@ def step_identity(conn, inv_id, inv, vendor, cd: Crustdata):
     # free check first: a near-miss of the vendor's own domain is impersonation, no lookup needed
     if inv_domain and v_domain and inv_domain != v_domain:
         dist = checks.edit_distance(inv_domain, v_domain)
-        if dist <= 3:
+        if dist <= int(__import__("app.config", fromlist=["get"]).get("lookalike_max_edit_distance")):
             with tx(conn):
                 _hold(conn, inv_id, "lookalike_sender",
                       f"Sent from {inv_domain}, a look-alike of the vendor's domain {v_domain} (edit distance {dist}). Possible impersonation.")
@@ -359,6 +359,8 @@ def step_pay(conn, inv_id, vendor, provider):
             _set(conn, inv_id, "PAYOUT_FAILED", "payout_failed",
                  {"code": "payout_rejected", "text": f"The payment provider refused the payout; nothing was paid. {e}"})
         return True
+    if os.environ.get("PAYDESK_CRASH_AFTER_PAYOUT") == "1":  # demo hook: die after the provider accepted, before we record it
+        os._exit(9)
     if isinstance(res, str):  # simple providers return just a reference
         res = {"id": res, "status": "processed", "utr": None, "detail": None}
     pstatus = (res.get("status") or "").lower()
@@ -495,10 +497,23 @@ def decide(invoice_id: str, decision: str, by: str, note: str = "", conn=None):
     """A person approves or rejects. They cannot edit results."""
     assert decision in ("approved", "rejected")
     conn = conn or connect()
+    from . import config
     with tx(conn):
-        row = conn.execute("SELECT state, run_id FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone()
+        row = conn.execute("SELECT state, run_id, amount_paise FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone()
         if not row or row["state"] != "AWAITING_APPROVAL":
             raise ValueError(f"{invoice_id} is not waiting for approval")
+        a = conn.execute("SELECT first_by FROM approvals WHERE invoice_id=?", (invoice_id,)).fetchone()
+        threshold = int(config.get("two_person_threshold_inr")) * 100
+        if decision == "approved" and (row["amount_paise"] or 0) >= threshold:
+            # maker-checker: two different people must approve large payments
+            if not a or not a["first_by"]:
+                conn.execute("UPDATE approvals SET first_by=?, first_at=? WHERE invoice_id=?", (by, time.time(), invoice_id))
+                log_event(conn, row["run_id"], invoice_id, "first_approval",
+                          {"by": by, "note": note, "needs": "a second, different approver"})
+                return "needs_second_approver"
+            if a["first_by"] == by:
+                raise ValueError("A second, different person must approve this payment.")
         conn.execute("UPDATE approvals SET decision=?, decided_by=?, decided_at=?, note=? WHERE invoice_id=? AND decision IS NULL",
                      (decision, by, time.time(), note, invoice_id))
         log_event(conn, row["run_id"], invoice_id, "decision", {"decision": decision, "by": by, "note": note})
+    return decision
